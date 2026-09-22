@@ -17,4 +17,4 @@ are written down somewhere durable.
 - [BIOS-FIX.md](BIOS-FIX.md) — the Above 4G Decoding fix: an X79-era MMIOH
   bug that hid the setting entirely, and the process used to patch and
   expose it
-- [SOFTWARE.md](SOFTWARE.md) — OS, driver, fan control, and access setup
+- [SOFTWARE.md](SOFTWARE.md) — OS, driver, and fan control
