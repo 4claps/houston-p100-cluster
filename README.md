@@ -18,3 +18,5 @@ are written down somewhere durable.
   bug that hid the setting entirely, and the process used to patch and
   expose it
 - [SOFTWARE.md](SOFTWARE.md) — OS, driver, and fan control
+- [LLAMA-CPP.md](LLAMA-CPP.md) — building llama.cpp for Pascal, the P100
+  performance patches, and the baseline-vs-patched benchmark
