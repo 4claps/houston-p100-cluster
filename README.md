@@ -1,6 +1,6 @@
 # houston-p100-cluster
 
-Documentation for `houston` (10.0.20.31), a 3x NVIDIA Tesla P100 16GB local
+Documentation for `houston`, a 3x NVIDIA Tesla P100 16GB local
 LLM inference server. It's a repurposed old NAS build, given a second life
 as a dedicated inference box once the hardware had 48GB of usable VRAM
 crammed into it.

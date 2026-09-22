@@ -78,17 +78,17 @@ fan header — repeat the manual cycling to confirm.
 
 ## SSH / remote access
 
-Remote access for Hermes / Claude Code, driven from the `seguin` host, is
-through a **dedicated `hermes` system user** rather than `duncan`'s own
-account — the same access pattern used on the `travis` host. This account
+Remote access for automated tooling (Claude Code / Hermes) is through a
+**dedicated `hermes` system user**, rather than a personal account — the
+same access pattern used elsewhere in this infrastructure. This account
 is deliberately scoped down:
 
 - No sudo access (`hermes` is not in `wheel` or any sudo-capable group)
 - No group memberships beyond its own primary group
 - A single authorized key in `~/.ssh/authorized_keys`, nothing else
 
-The intent is that anything Hermes does on this box through that account
-is limited to whatever `hermes`'s own file permissions allow — it isn't a
-backdoor into `duncan`'s account or root, and any change that actually
-needs elevated privilege has to go through a human with real credentials
-on this box, not through an agent's SSH session.
+The intent is that anything an agent does on this box through that
+account is limited to whatever `hermes`'s own file permissions allow —
+it isn't a backdoor into a personal account or root, and any change that
+actually needs elevated privilege has to go through a human with real
+credentials on this box, not through an agent's SSH session.
