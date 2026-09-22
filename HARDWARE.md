@@ -41,8 +41,8 @@ The P100 PCIe is a passive, blower-less design — it expects rack-mounted
 front-to-back airflow that a tower case simply doesn't provide on its own.
 Cooling is retrofitted with:
 
-- **3D-printed fan shrouds**, remixed from a community "Dual Tesla P100
-  GPU Fan Shroud 120mm" design, printed in PETG rather than PLA
+- **3D-printed fan shrouds**, custom-designed for a 120mm fan across all
+  three GPUs, printed in PETG rather than PLA
   specifically for the heat tolerance — these shrouds sit directly against
   a card's exhaust-side heatsink fins and get genuinely warm in operation.
 - **Arctic P12 Pro 120mm fans**, chosen for their high static pressure
