@@ -126,3 +126,115 @@ no point in the pipeline where all three cards are computing at once.
 looks like the practical sweet spot** if it's ever run multi-user rather
 than single-stream — pushing concurrency further doesn't pay off given
 the PCIe/NCCL limits above.
+
+## gppm's power-saving mechanism is inert on P100 (and why it was removed)
+
+`gppm` (github.com/crashr/gppm) was installed early in this box's setup specifically
+to manage GPU idle power draw — these P100s sit at an elevated ~25-30W per card
+whenever a model is loaded, even fully idle, and gppm was meant to bring that down.
+It doesn't, and can't, on this hardware. This section documents why, since gppm has
+since been removed and llama.cpp now runs as a plain systemd service instead.
+
+### What gppm actually does
+
+gppm's idle-power mechanism is entirely built on forcing an NVIDIA GPU's reported
+performance state ("pstate") down to P8 via `nvidia-pstate`/NVML whenever none of
+its managed llama.cpp instances have an active task, and back to P0 when a task
+starts. It was written for and tuned against **Tesla P40** (GP102 chip).
+
+### What was actually tested on this box
+
+The pstate-forcing call was tested directly against these Tesla P100s (GP100 chip)
+under three separate conditions:
+
+1. **A completely idle GPU, no model loaded, no CUDA context at all.** Forcing
+   pstate 8 reported success from the tool, but `nvidia-smi` continued to report
+   `P0` and power draw was unchanged (29.90 W → 30.14 W — within measurement
+   noise).
+2. **`llama-server` loaded and idling** (the actual target scenario — a model
+   staying resident most of the time). Same result: pstate stayed `P0`, power
+   draw on the tested GPU was exactly unchanged (29.98 W → 29.98 W).
+3. **Persistence mode on vs. off.** No measurable difference either way (~30W
+   regardless).
+
+Beyond the pstate call itself, two further checks ruled out any other lever:
+
+- **Memory clock has exactly one supported value** on this card (715 MHz) — there
+  is no lower-power memory P-state exposed at all, unlike GDDR5-equipped cards
+  (P40) which do drop memory clock substantially at idle.
+- **Power limit floor is 125W**, far above the ~25-30W idle draw already observed
+  — capping the power limit lower has nothing to act on at these idle wattages.
+
+### Why
+
+The working theory: **P40 is GP102**, a die shared with consumer/workstation
+Pascal parts that retain a display-capable heritage and the granular idle
+power-gating that comes with it. **P100 is GP100**, a pure-HPC die built for
+sustained compute, with HBM2 instead of GDDR5, and it was never designed to
+power-gate for idle the way a display-capable Pascal part is. There's no
+equivalent low-power path exposed through NVML/`nvidia-smi` on this chip at
+all — this isn't a gppm configuration problem or a bug to fix, it's a hardware
+capability gap.
+
+### What gppm was kept around for instead, and why it was removed anyway
+
+Since the power-management feature — the actual reason it was installed — does
+nothing on this hardware, gppm was kept running for a while purely for its
+secondary feature: llama.cpp instance supervision (config-driven enable/disable,
+auto-restart on crash). That's a reasonable thing to want, but it's also not
+worth the extra moving part (a whole separate daemon, venv, and config format)
+just for supervision that a plain systemd unit does natively. gppm has been
+uninstalled; llama.cpp now runs directly as a systemd service (see
+[SOFTWARE.md](SOFTWARE.md)).
+
+## MTP speculative decoding: measured gain
+
+Prompted by a "why aren't the GPUs closer to max" question, which led to
+researching what actually moves single-request throughput (as opposed to
+concurrency, covered above) — llama.cpp supports self-speculative decoding
+via a model's own multi-token-prediction (MTP) head: the model drafts
+several tokens ahead in one pass, then verifies them all against the full
+model in the same step. Unlike `--parallel`, this doesn't trade latency
+for throughput — it's a straight win on a single request, since every
+draft token is checked against the real model before being accepted
+(deterministic sampling, no accuracy loss).
+
+**The catch: the GGUF has to be MTP-converted, and ours wasn't — even
+though it looked like it should already work.** Every server log this
+whole time had been printing lines like `model has unused tensor
+blk.64.nextn.eh_proj.weight -- ignoring`, which looked like the draft
+head was already present. Enabling it (`--spec-type draft-mtp
+--spec-draft-n-max 3`) against that file failed outright:
+
+```
+common_speculative_init_result: creating MTP draft context against the target model '...'
+llama_init_from_model: context type MTP requested but model doesn't contain MTP layers
+```
+
+Those `nextn` tensors are present in the regular quant but not in a form
+llama.cpp's MTP code recognizes — they're leftover checkpoint artifacts,
+not a usable draft head. The fix was switching to unsloth's
+`Qwen3.6-35B-A3B-MTP-GGUF` repo, which publishes the same `UD-Q4_K_XL`
+quant we were already running, properly MTP-converted (~500MB larger,
+same weights otherwise — see [SOFTWARE.md](SOFTWARE.md)). That one
+loaded cleanly with the same flags and the MTP draft context actually
+initialized.
+
+Measured with the same live single-request test used earlier
+(`/completion`, `n_predict: 512`, `temperature: 0`, single slot):
+
+| | Generation (t/s) |
+|---|---:|
+| Baseline (no MTP) | ~19.2–19.7 |
+| MTP (`--spec-draft-n-max 3`) | ~21.7–22.5 |
+| Gain | **+15–17%** |
+
+Worth being upfront that this is smaller than MTP's headline numbers
+elsewhere (community reports of ~1.5–2x on other hardware). The likely
+reason: speculative decoding's payoff depends on how cheap the draft
+step is relative to the main model's per-token cost, and that ratio is
+evidently less favorable on this hardware/quant/prompt combination than
+on the setups those bigger numbers came from. Still a real, deterministic
+gain with no measured downside, so it's now the production configuration
+(see [SOFTWARE.md](SOFTWARE.md)) — the original non-MTP model file has
+been deleted.
