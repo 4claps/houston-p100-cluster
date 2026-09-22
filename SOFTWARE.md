@@ -91,20 +91,30 @@ fewer moving part.
 
 ```ini
 [Unit]
-Description=llama-server - Qwen3.6-35B-A3B production (patched P100 build)
+Description=llama-server - Qwen3.6-35B-A3B production (patched P100 build, MTP speculative decoding)
 After=network.target
 
 [Service]
 Type=simple
 User=duncan
 Group=duncan
-ExecStart=/opt/llama.cpp-p100/build/bin/llama-server --host 0.0.0.0 --port 8080 -m /home/duncan/models/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf -ngl 99 -ts 1/1/1 -fa on -sm layer --ctx-size 65536 --cache-type-k q8_0 --cache-type-v q8_0 --parallel 1 --jinja --cache-ram 0 --no-cache-idle-slots
+ExecStart=/opt/llama.cpp-p100/build/bin/llama-server --host 0.0.0.0 --port 8080 -m /home/duncan/models/Qwen3.6-35B-A3B-MTP-UD-Q4_K_XL.gguf -ngl 99 -ts 1/1/1 -fa on -sm layer --ctx-size 65536 --cache-type-k q8_0 --cache-type-v q8_0 --parallel 1 --jinja --cache-ram 0 --no-cache-idle-slots --spec-type draft-mtp --spec-draft-n-max 3
 Restart=on-failure
 RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
 ```
+
+`--spec-type draft-mtp --spec-draft-n-max 3` enables MTP (multi-token
+prediction) speculative decoding — see [BENCHMARKING.md](BENCHMARKING.md)
+for what it does and the measured gain. It needs an MTP-converted GGUF,
+not the regular quant: the model file is
+`Qwen3.6-35B-A3B-MTP-UD-Q4_K_XL.gguf` (unsloth's
+`Qwen3.6-35B-A3B-MTP-GGUF` repo), not the plain
+`Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf` used earlier — same quant level,
+~500MB larger for the added draft head, otherwise the same model
+weights.
 
 `--cache-ram 0 --no-cache-idle-slots` disables llama-server's cross-request
 host-RAM prompt cache — carried over from the bc250 cluster's own

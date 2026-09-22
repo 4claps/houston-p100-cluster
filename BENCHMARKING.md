@@ -186,3 +186,55 @@ worth the extra moving part (a whole separate daemon, venv, and config format)
 just for supervision that a plain systemd unit does natively. gppm has been
 uninstalled; llama.cpp now runs directly as a systemd service (see
 [SOFTWARE.md](SOFTWARE.md)).
+
+## MTP speculative decoding: measured gain
+
+Prompted by a "why aren't the GPUs closer to max" question, which led to
+researching what actually moves single-request throughput (as opposed to
+concurrency, covered above) — llama.cpp supports self-speculative decoding
+via a model's own multi-token-prediction (MTP) head: the model drafts
+several tokens ahead in one pass, then verifies them all against the full
+model in the same step. Unlike `--parallel`, this doesn't trade latency
+for throughput — it's a straight win on a single request, since every
+draft token is checked against the real model before being accepted
+(deterministic sampling, no accuracy loss).
+
+**The catch: the GGUF has to be MTP-converted, and ours wasn't — even
+though it looked like it should already work.** Every server log this
+whole time had been printing lines like `model has unused tensor
+blk.64.nextn.eh_proj.weight -- ignoring`, which looked like the draft
+head was already present. Enabling it (`--spec-type draft-mtp
+--spec-draft-n-max 3`) against that file failed outright:
+
+```
+common_speculative_init_result: creating MTP draft context against the target model '...'
+llama_init_from_model: context type MTP requested but model doesn't contain MTP layers
+```
+
+Those `nextn` tensors are present in the regular quant but not in a form
+llama.cpp's MTP code recognizes — they're leftover checkpoint artifacts,
+not a usable draft head. The fix was switching to unsloth's
+`Qwen3.6-35B-A3B-MTP-GGUF` repo, which publishes the same `UD-Q4_K_XL`
+quant we were already running, properly MTP-converted (~500MB larger,
+same weights otherwise — see [SOFTWARE.md](SOFTWARE.md)). That one
+loaded cleanly with the same flags and the MTP draft context actually
+initialized.
+
+Measured with the same live single-request test used earlier
+(`/completion`, `n_predict: 512`, `temperature: 0`, single slot):
+
+| | Generation (t/s) |
+|---|---:|
+| Baseline (no MTP) | ~19.2–19.7 |
+| MTP (`--spec-draft-n-max 3`) | ~21.7–22.5 |
+| Gain | **+15–17%** |
+
+Worth being upfront that this is smaller than MTP's headline numbers
+elsewhere (community reports of ~1.5–2x on other hardware). The likely
+reason: speculative decoding's payoff depends on how cheap the draft
+step is relative to the main model's per-token cost, and that ratio is
+evidently less favorable on this hardware/quant/prompt combination than
+on the setups those bigger numbers came from. Still a real, deterministic
+gain with no measured downside, so it's now the production configuration
+(see [SOFTWARE.md](SOFTWARE.md)) — the original non-MTP model file has
+been deleted.
