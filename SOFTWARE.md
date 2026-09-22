@@ -75,3 +75,74 @@ physical fan actually responded.
 If this service is ever reinstalled from scratch on different hardware or
 after a board swap, don't assume `pwm2` still maps to the same physical
 fan header — repeat the manual cycling to confirm.
+
+## Running llama-server in production
+
+The patched llama.cpp build (see
+[LLAMA-CPP-P100-ENHANCEMENTS.md](LLAMA-CPP-P100-ENHANCEMENTS.md)) runs as
+a plain systemd service — no external process manager. An earlier setup
+used `gppm` for this, mainly for its instance-supervision feature after
+its actual power-management purpose turned out not to work on this
+hardware (see [BENCHMARKING.md](BENCHMARKING.md)); it's been removed in
+favor of systemd's own supervision, which does the same job with one
+fewer moving part.
+
+`llama-server-moe.service`:
+
+```ini
+[Unit]
+Description=llama-server - Qwen3.6-35B-A3B production (patched P100 build)
+After=network.target
+
+[Service]
+Type=simple
+User=duncan
+Group=duncan
+ExecStart=/opt/llama.cpp-p100/build/bin/llama-server --host 0.0.0.0 --port 8080 -m /home/duncan/models/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf -ngl 99 -ts 1/1/1 -fa on -sm layer --ctx-size 65536 --cache-type-k q8_0 --cache-type-v q8_0 --parallel 1 --jinja --cache-ram 0 --no-cache-idle-slots
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+`--cache-ram 0 --no-cache-idle-slots` disables llama-server's cross-request
+host-RAM prompt cache — carried over from the bc250 cluster's own
+production config after their bake-off found the opposite (cache left on)
+could get the server OOM-killed when unrelated large prompts piled up in
+it. Worth keeping on any future llama-server production unit on this box.
+
+### The binary has to live under `/opt`, not `/home`
+
+The build lives at `~/src/llama.cpp-v040-patched/build` (see
+[LLAMA-CPP-P100-ENHANCEMENTS.md](LLAMA-CPP-P100-ENHANCEMENTS.md)), but a
+systemd unit **cannot execute a binary there directly** — Fedora's SELinux
+policy denies `init_t` (systemd's own domain) from executing anything
+labeled `user_home_t`, which is the default label for everything under a
+user's home directory. This isn't a permissions issue `chmod` can fix; it
+showed up first with `gppm`'s own Python venv (`Unable to locate
+executable ... Permission denied` from systemd, an SELinux AVC `denied
+{ read }` on the interpreter symlink underneath), and the same restriction
+applies to `llama-server` itself.
+
+The fix is the same one used for `gppm`: copy the build to somewhere
+under `/opt`, which gets the `usr_t` label systemd is allowed to execute:
+
+```
+sudo mkdir -p /opt/llama.cpp-p100
+sudo cp -r ~/src/llama.cpp-v040-patched/build /opt/llama.cpp-p100/build
+sudo chown -R duncan:duncan /opt/llama.cpp-p100
+```
+
+Note that the copied binary still links its shared libraries (`libggml-cuda.so.0`
+etc.) from the *original* `~/src/...` path — the build bakes in an
+absolute RPATH rather than a relative one, so copying the tree doesn't
+change where those get loaded from. That turned out not to matter:
+loading a shared library from `user_home_t` via the dynamic linker is not
+the same SELinux operation as `execve`-ing a binary or symlink from
+there, and it was confirmed working with a `systemd-run` test before this
+was relied on for the real service. Only the entry-point binary itself
+needs to live under `/opt`; if that stops being true (e.g. after a
+different SELinux policy update), rebuilding with `-DCMAKE_INSTALL_RPATH
+'$ORIGIN'` or using `patchelf` would be the real fix rather than copying
+the whole tree.
