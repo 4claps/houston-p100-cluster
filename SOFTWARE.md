@@ -91,14 +91,14 @@ fewer moving part.
 
 ```ini
 [Unit]
-Description=llama-server - Qwen3.6-35B-A3B production (patched P100 build, MTP speculative decoding)
+Description=llama-server - Qwen3.6-35B-A3B production (patched P100 build, MTP speculative decoding, tuned)
 After=network.target
 
 [Service]
 Type=simple
 User=duncan
 Group=duncan
-ExecStart=/opt/llama.cpp-p100/build/bin/llama-server --host 0.0.0.0 --port 8080 -m /home/duncan/models/Qwen3.6-35B-A3B-MTP-UD-Q4_K_XL.gguf -ngl 99 -ts 1/1/1 -fa on -sm layer --ctx-size 65536 --cache-type-k q8_0 --cache-type-v q8_0 --parallel 1 --jinja --cache-ram 0 --no-cache-idle-slots --spec-type draft-mtp --spec-draft-n-max 3
+ExecStart=/opt/llama.cpp-p100/build/bin/llama-server --host 0.0.0.0 --port 8080 -m /home/duncan/models/Qwen3.6-35B-A3B-MTP-UD-Q4_K_XL.gguf -ngl 99 -ts 1/1/1 -fa on -sm layer --ctx-size 65536 --cache-type-k q8_0 --cache-type-v q8_0 --parallel 1 --jinja --cache-ram 0 --no-cache-idle-slots --spec-type draft-mtp --spec-draft-n-max 3 --spec-draft-p-min 0.75
 Restart=on-failure
 RestartSec=5
 
@@ -106,9 +106,11 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
-`--spec-type draft-mtp --spec-draft-n-max 3` enables MTP (multi-token
-prediction) speculative decoding — see [BENCHMARKING.md](BENCHMARKING.md)
-for what it does and the measured gain. It needs an MTP-converted GGUF,
+`--spec-type draft-mtp --spec-draft-n-max 3 --spec-draft-p-min 0.75`
+enables MTP (multi-token prediction) speculative decoding, tuned — see
+[BENCHMARKING.md](BENCHMARKING.md) for what it does, the measured gain,
+and the tuning sweep that found `--spec-draft-p-min 0.75` (not the
+default of `0.0`) was the setting actually worth changing. It needs an MTP-converted GGUF,
 not the regular quant: the model file is
 `Qwen3.6-35B-A3B-MTP-UD-Q4_K_XL.gguf` (unsloth's
 `Qwen3.6-35B-A3B-MTP-GGUF` repo), not the plain

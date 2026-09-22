@@ -238,3 +238,49 @@ on the setups those bigger numbers came from. Still a real, deterministic
 gain with no measured downside, so it's now the production configuration
 (see [SOFTWARE.md](SOFTWARE.md)) — the original non-MTP model file has
 been deleted.
+
+## MTP tuning sweep: p-min mattered, n-max and sampler didn't
+
+The MTP result above used llama.cpp's defaults for everything except
+`--spec-draft-n-max`. Since the patches repo's own 120 t/s number used a
+wider verify batch (width-5) and a tuned acceptance threshold, it was
+worth checking whether tuning those flags on our hardware helped the
+same way. Same live single-request test as before (`/completion`,
+`n_predict: 512`, single slot):
+
+| Config | Generation (t/s) | vs. no-MTP baseline |
+|---|---:|---:|
+| No MTP | ~19.2–19.7 | — |
+| `n-max=3, p-min=0.0` (original production) | ~21.7–22.5 | +15–17% |
+| `n-max=5, p-min=0.0` | ~19.2–19.6 | ~0% |
+| **`n-max=3, p-min=0.75`** | **~23.9–24.4** | **+23–25%** |
+| `n-max=4, p-min=0.75` | ~24.0–24.2 | +23–25% (no gain over n-max=3) |
+| `n-max=3, p-min=0.75`, realistic sampler (temp 0.7, top-p 0.8, top-k 20) | ~23.9–24.3 | same as greedy |
+
+**Widening the draft window alone made things worse, not better.**
+`n-max=5` with the default acceptance threshold erased essentially all of
+the MTP gain. The likely reason: drafting further ahead means the later
+draft tokens are less likely to match what the full model would actually
+produce, so a wider window without a correspondingly tuned threshold just
+adds verify overhead for tokens that mostly get rejected anyway.
+
+**Raising the acceptance threshold (`--spec-draft-p-min 0.75`) was the
+real lever**, on top of the original `n-max=3` — an additional +8–9%
+beyond the untuned MTP result, for **+23–25% total** over no-MTP. Once
+that threshold is set correctly, widening the draft window further
+(`n-max=4`) added nothing measurable.
+
+**Sampler strategy made no difference either way** — greedy
+(`temperature: 0`) and the "realistic" sampler (temperature 0.7, top-p
+0.8, top-k 20) that the patches repo's own numbers used produced
+statistically indistinguishable throughput here. Whatever sampler-
+dependent effect on MTP acceptance the patches repo's README warns about
+("sampler settings change conclusions here by several points"), it
+doesn't show up as a throughput difference in this test.
+
+Production now runs `--spec-draft-n-max 3 --spec-draft-p-min 0.75` (see
+[SOFTWARE.md](SOFTWARE.md)). None of this tuning touches output
+correctness — speculative decoding always verifies drafted tokens
+against the full model before accepting them, so every configuration
+above produces identical output for a given prompt and seed; only
+throughput differs.
