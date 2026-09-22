@@ -105,69 +105,8 @@ back at the tensor-split flag; it took a verbose (`-v`) run to see the
 actual `layer N assigned to device CUDA0` lines for every layer before
 that was obvious.
 
-## Benchmark: Qwen3.6-35B-A3B (MoE)
+## Benchmarks
 
-Model: Qwen3.6-35B-A3B, Q4_K_XL quant, tensor-split evenly across all
-three P100s (`-ts 1/1/1`, `-ngl 99`, flash attention on). 5 repetitions
-each, `llama-bench` defaults otherwise.
-
-| | pp512 | tg128 (decode) |
-|---|---:|---:|
-| Baseline (stock `v0.4.0`) | 90.97 t/s | 12.91 t/s |
-| Patched (29 patches) | 89.86 t/s | **19.66 t/s** |
-| Δ | flat (within noise) | **+52.3%** |
-
-Prompt processing is essentially unchanged, which matches the patch set's
-own scope — it's targeted at decode, not prompt processing or
-large-batch serving. The measured +52.3% decode improvement is lower than
-the patch repo's own headline number for this same model (~+80%), which
-is expected: their number used a different quant, MTP speculative
-decoding, and a realistic sampler configuration, none of which this
-benchmark reproduces — this is a plain `llama-bench` pp/tg comparison,
-not a reproduction of their full methodology. The relative improvement
-from the patches on identical hardware and identical everything-else is
-the useful number here, and it's real and repeatable.
-
-Before this table could be trusted, two false starts had to be ruled
-out first:
-
-- The very first full-context load attempt (no `-c` flag) thrashed this
-  box's 16GB of RAM — `llama-cli` defaults to the model's native max
-  context when none is given, which for this model is large enough that
-  loading it alongside a full KV-cache allocation drove the box into
-  page-cache thrashing that looked like a hang (disk `read_bytes` grew to
-  nearly 2x the model's own file size before it was killed). Fixed by
-  always passing an explicit, reasonable `-c` for any interactive test.
-- A second apparent hang (100% real wall-clock time, 0% GPU utilization,
-  parked in a `futex_do_wait`) turned out to be `llama-cli`'s **default,
-  automatic tensor-split** determination taking an very long time or
-  getting stuck on this specific 3-GPU, no-NCCL setup. Passing an
-  explicit `-ts` value instead of leaving it on auto-detect avoided it
-  entirely and every run since has been reliable.
-
-## Benchmark: Qwen3.8-27B (dense)
-
-Same setup as above (`-ts 1/1/1`, `-ngl 99`, flash attention on, 5
-repetitions), but a **dense** model this time rather than MoE, to see
-how much of the patch set's benefit carries over. Model: Qwen3.8-27B,
-Q5_K_XL quant.
-
-| | pp512 | tg128 (decode) |
-|---|---:|---:|
-| Baseline (stock `v0.4.0`) | 41.38 t/s | 2.25 t/s |
-| Patched (29 patches) | 41.13 t/s | **3.07 t/s** |
-| Δ | flat (within noise) | **+36.4%** |
-
-A real gain, but smaller than the MoE model's +52.3% — expected, since
-several of the 29 patches are scoped to MoE routing or to the
-gated-delta-net block (Qwen3.5/Qwen3-Next specific), and simply don't
-fire at all on a dense model. What's left driving the +36.4% here is the
-general `sm_60`/CUDA-kernel and host-side patches, which apply
-regardless of architecture.
-
-Decode throughput itself is far lower on this model than on the MoE one
-(2-3 t/s vs 12-19 t/s) — not a patch-related regression, just the
-architecture difference: all 27B dense parameters activate on every
-token here, versus roughly 3B active parameters per token on the MoE
-model. Prompt processing is flat in both cases either way, consistent
-with the patch set being decode-focused.
+Baseline-vs-patched throughput results, and a look at why GPU power/
+utilization stay low during normal single-stream use, are in
+[BENCHMARKING.md](BENCHMARKING.md).
