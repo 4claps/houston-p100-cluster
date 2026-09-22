@@ -105,7 +105,7 @@ back at the tensor-split flag; it took a verbose (`-v`) run to see the
 actual `layer N assigned to device CUDA0` lines for every layer before
 that was obvious.
 
-## Benchmark
+## Benchmark: Qwen3.6-35B-A3B (MoE)
 
 Model: Qwen3.6-35B-A3B, Q4_K_XL quant, tensor-split evenly across all
 three P100s (`-ts 1/1/1`, `-ngl 99`, flash attention on). 5 repetitions
@@ -144,3 +144,30 @@ out first:
   getting stuck on this specific 3-GPU, no-NCCL setup. Passing an
   explicit `-ts` value instead of leaving it on auto-detect avoided it
   entirely and every run since has been reliable.
+
+## Benchmark: Qwen3.8-27B (dense)
+
+Same setup as above (`-ts 1/1/1`, `-ngl 99`, flash attention on, 5
+repetitions), but a **dense** model this time rather than MoE, to see
+how much of the patch set's benefit carries over. Model: Qwen3.8-27B,
+Q5_K_XL quant.
+
+| | pp512 | tg128 (decode) |
+|---|---:|---:|
+| Baseline (stock `v0.4.0`) | 41.38 t/s | 2.25 t/s |
+| Patched (29 patches) | 41.13 t/s | **3.07 t/s** |
+| Δ | flat (within noise) | **+36.4%** |
+
+A real gain, but smaller than the MoE model's +52.3% — expected, since
+several of the 29 patches are scoped to MoE routing or to the
+gated-delta-net block (Qwen3.5/Qwen3-Next specific), and simply don't
+fire at all on a dense model. What's left driving the +36.4% here is the
+general `sm_60`/CUDA-kernel and host-side patches, which apply
+regardless of architecture.
+
+Decode throughput itself is far lower on this model than on the MoE one
+(2-3 t/s vs 12-19 t/s) — not a patch-related regression, just the
+architecture difference: all 27B dense parameters activate on every
+token here, versus roughly 3B active parameters per token on the MoE
+model. Prompt processing is flat in both cases either way, consistent
+with the patch set being decode-focused.
