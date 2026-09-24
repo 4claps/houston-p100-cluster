@@ -3,43 +3,17 @@
 Benchmark results for this box, kept separate from
 [LLAMA-CPP-P100-ENHANCEMENTS.md](LLAMA-CPP-P100-ENHANCEMENTS.md) (which
 covers the build/patch process itself) so new runs have an obvious place
-to land without that doc growing without bound.
+to land without that doc growing without bound. Results on a real agent
+workload are in [GPU-SCALING.md](GPU-SCALING.md) and
+[MISCELLANEOUS-BENCHMARKS.md](MISCELLANEOUS-BENCHMARKS.md).
 
 All runs below use the patched build described in
 [LLAMA-CPP-P100-ENHANCEMENTS.md](LLAMA-CPP-P100-ENHANCEMENTS.md) unless
-otherwise noted, with tensor-split evenly across all three P100s.
-
-## Erratum (2026-09-24): the absolute numbers below were very likely measured with GPU clocks stuck low
-
-Every result in this document was recorded on 2026-09-21 or 2026-09-22.
-GPU clocks weren't logged for these runs, but telemetry from the first
-3-GPU battery on 2026-09-22 shows the core clocks pinned at 405 MHz (the
-P100's idle clock, about 30% of the ~1,328 MHz it normally runs under
-load) — see the Correction in
-[GPU-SCALING.md](GPU-SCALING.md#correction-the-first-3-gpu-run-was-clock-locked).
-Re-running the first table's command on 2026-09-24 gives far higher
-numbers than recorded below, which strongly suggests these runs were made
-in the same state. The cause is unknown, and by 2026-09-23 the clocks
-were normal.
-
-What that means for the numbers below:
-
-- **Absolute throughput is far too low.** The same `llama-bench` command
-  as the first table below (Qwen3.6-35B-A3B Q4_K_XL, patched build, all
-  three cards, `-ts 1/1/1`) gives pp512 459.7 t/s and tg128 70.6 t/s
-  when re-run at normal clocks, versus 89.86 and 19.66 t/s recorded
-  below. The dense-model and concurrency figures are probably similarly
-  low but were not re-measured.
-- **The relative comparisons** (patched vs. baseline, the MTP gain, the
-  `p-min` sweep) compare runs made in the same state, so they probably
-  still hold in direction, but the percentages haven't been re-measured
-  at normal clocks.
-- **The explanation for low GPU power draw in the concurrency section is
-  very likely wrong.** The cards drew little power because they were
-  clocked down, not because single-stream decode is inherently
-  memory-bound and low-power. The concurrency "sweet spot" and the
-  PCIe/NCCL explanation for its shape should be treated as unverified
-  until re-measured.
+otherwise noted, with tensor-split evenly across all three P100s
+(`-ts 1/1/1`, slots at x16/x8/x8). They were measured on 2026-09-24, with
+the GPU core clocks checked at ~1,328 MHz under load. The `llama-bench`
+runs on the MoE model use the MTP-converted GGUF (llama-bench doesn't use
+the MTP layers).
 
 ## Patched vs. baseline: Qwen3.6-35B-A3B (MoE)
 
@@ -48,20 +22,19 @@ each, `llama-bench` defaults otherwise.
 
 | | pp512 | tg128 (decode) |
 |---|---:|---:|
-| Baseline (stock `v0.4.0`) | 90.97 t/s | 12.91 t/s |
-| Patched (29 patches) | 89.86 t/s | **19.66 t/s** |
-| Δ | flat (within noise) | **+52.3%** |
+| Baseline (stock `v0.4.0`) | 460.98 ± 11.87 t/s | 54.69 ± 1.24 t/s |
+| Patched (29 patches) | 468.18 ± 4.24 t/s | **69.54 ± 1.31 t/s** |
+| Δ | +1.6% (within noise) | **+27.2%** |
 
 Prompt processing is essentially unchanged, which matches the patch set's
 own scope — it's targeted at decode, not prompt processing or
-large-batch serving. The measured +52.3% decode improvement is lower than
-the patch repo's own headline number for this same model (~+80%), which
-is expected: their number used a different quant, MTP speculative
-decoding, and a realistic sampler configuration, none of which this
-benchmark reproduces — this is a plain `llama-bench` pp/tg comparison,
-not a reproduction of their full methodology. The relative improvement
-from the patches on identical hardware and identical everything-else is
-the useful number here, and it's real and repeatable.
+large-batch serving. The measured +27% decode improvement is well below
+the patch repo's own headline number for this model (~+80%), which is
+expected: their number used a different quant, MTP speculative decoding,
+and a realistic sampler, none of which this benchmark reproduces — this
+is a plain `llama-bench` pp/tg comparison, not a reproduction of their
+full methodology. The relative improvement from the patches on identical
+hardware and identical everything-else is the useful number.
 
 Before this table could be trusted, two false starts had to be ruled
 out first:
@@ -87,77 +60,56 @@ rather than MoE, to see how much of the patch set's benefit carries over.
 
 | | pp512 | tg128 (decode) |
 |---|---:|---:|
-| Baseline (stock `v0.4.0`) | 41.38 t/s | 2.25 t/s |
-| Patched (29 patches) | 41.13 t/s | **3.07 t/s** |
-| Δ | flat (within noise) | **+36.4%** |
+| Baseline (stock `v0.4.0`) | 141.81 ± 0.33 t/s | 10.50 ± 0.00 t/s |
+| Patched (29 patches) | 141.06 ± 1.40 t/s | **13.22 ± 0.00 t/s** |
+| Δ | −0.5% (within noise) | **+25.9%** |
 
-A real gain, but smaller than the MoE model's +52.3% — expected, since
-several of the 29 patches are scoped to MoE routing or to the
-gated-delta-net block (Qwen3.5/Qwen3-Next specific), and simply don't
-fire at all on a dense model. What's left driving the +36.4% here is the
-general `sm_60`/CUDA-kernel and host-side patches, which apply
-regardless of architecture.
+A real gain, and close to the MoE model's +27%, even though several of
+the 29 patches are scoped to MoE routing or to the gated-delta-net block
+(Qwen3.5/Qwen3-Next specific) and don't fire on a dense model. That
+suggests the general `sm_60`/CUDA-kernel and host-side patches, which
+apply regardless of architecture, carry most of the benefit.
 
 Decode throughput itself is far lower on this model than on the MoE one
-(2-3 t/s vs 12-19 t/s) — not a patch-related regression, just the
-architecture difference: all 27B dense parameters activate on every
-token here, versus roughly 3B active parameters per token on the MoE
-model. Prompt processing is flat in both cases either way, consistent
-with the patch set being decode-focused.
+(13 vs. 70 t/s) — not a patch-related regression, just the architecture
+difference: all 27B dense parameters activate on every token, versus
+roughly 3B active parameters per token on the MoE model. Prompt
+processing is flat in both cases, consistent with the patch set being
+decode-focused.
 
 ## Batch size / concurrency scaling
 
-Prompted by noticing GPU power draw and temps staying very low (under
-50W, well off the 250W TDP) during the single-stream benchmarks above —
-worth checking whether that's a sign of the cards being underused, or
-just an expected property of the workload.
-
-`llama-batched-bench` was run against the patched build (Qwen3.6-35B-A3B,
-same setup as its table above) sweeping the number of concurrent
-sequences (`-npl`) from 1 to 32, `-npp 128 -ntg 128 -c 16384`:
+`llama-batched-bench` against the patched build (Qwen3.6-35B-A3B, same
+setup as its table above), sweeping the number of concurrent sequences
+(`-npl`) from 1 to 32, `-npp 128 -ntg 128 -c 16384`:
 
 | Concurrent sequences (B) | Decode t/s (TG) | Total t/s |
 |---:|---:|---:|
-| 1 | 18.72 | 23.28 |
-| 4 | 34.52 | 49.26 |
-| 8 | **38.85** | **60.20** |
-| 16 | 26.40 | 43.91 |
-| 32 | 26.66 | 44.84 |
+| 1 | 69.09 | 49.95 |
+| 4 | 152.56 | 224.86 |
+| 8 | **174.64** | **278.29** |
+| 16 | 112.97 | 193.02 |
+| 32 | 125.99 | 214.67 |
 
-**Single-stream decode (B=1) is memory-bandwidth-bound, not
-compute-bound**: generating each token means reading the active weights
-out of VRAM once, with relatively little math done per byte read. The
-SMs spend most of their time waiting on memory rather than computing, so
-low power draw and low temps at B=1 are expected behavior, not a
-misconfiguration — this is true of basically all GPUs doing batch-1 LLM
-decode, not specific to the P100.
+Going from 1 to 8 concurrent sequences raises decode throughput about
+2.5x (69 → 175 t/s). Throughput **peaks at 8 concurrent sequences and
+regresses** at 16 and 32 (to ~113-126 t/s) rather than continuing to
+climb. The cause isn't determined. PCIe link width doesn't explain it on
+its own (link width has no measurable effect on single-stream decode; see
+[GPU-SCALING.md](GPU-SCALING.md)), so the cost is more likely in how the
+work is synchronized across the three cards once enough concurrent
+requests are in flight, but that hasn't been tested.
 
-Confirmed directly: going from 1 to 8 concurrent sequences roughly
-**doubles** decode throughput (18.72 → 38.85 t/s), and GPU power during
-those runs spiked to 40-48W with individual cards briefly hitting 100%
-utilization — well above the ~25-30W / 0% idle baseline seen at B=1.
+Under the default layer-split mode (`-sm layer`) with no NVLink, only one
+GPU is ever at high utilization at a time: each card processes its
+assigned layers in turn as the token's activation passes through the
+pipeline, so no point in the pipeline has all three cards computing at
+once. The same is true of the single-stream runs, where each card is busy
+well under half the time.
 
-Throughput **peaks around 8 concurrent sequences and regresses** at 16
-and 32 (down to ~26-27 t/s) rather than continuing to climb. That tracks
-with two hardware limits already known about this box (see
-[HARDWARE.md](HARDWARE.md) and
-[LLAMA-CPP-P100-ENHANCEMENTS.md](LLAMA-CPP-P100-ENHANCEMENTS.md)): two of
-the three P100s train at PCIe x8 instead of their slots' native x16, and
-this build has no NCCL. Both raise the cost of inter-GPU synchronization
-under layer-split tensor parallelism, and that cost looks like it starts
-dominating once there's enough concurrent traffic to saturate it.
-
-Also observed while watching `nvidia-smi` during the sweep: only **one
-GPU is ever at high utilization at a time**, never two or three
-simultaneously. That's expected under the default layer-split mode
-(`-sm layer`) with no NVLink — each GPU processes its assigned layers in
-turn as the token's activation passes through the pipeline, so there's
-no point in the pipeline where all three cards are computing at once.
-
-**Practical takeaway**: for this specific box, **8 concurrent requests
-looks like the practical sweet spot** if it's ever run multi-user rather
-than single-stream — pushing concurrency further doesn't pay off given
-the PCIe/NCCL limits above.
+**Practical takeaway**: for this box, **8 concurrent requests looks like
+the practical sweet spot** if it's ever run multi-user rather than
+single-stream. This sweep was only run on three cards.
 
 ## gppm's power-saving mechanism is inert on P100 (and why it was removed)
 
@@ -219,24 +171,22 @@ just for supervision that a plain systemd unit does natively. gppm has been
 uninstalled; llama.cpp now runs directly as a systemd service (see
 [SOFTWARE.md](SOFTWARE.md)).
 
-## MTP speculative decoding: measured gain
+## MTP speculative decoding
 
-Prompted by a "why aren't the GPUs closer to max" question, which led to
-researching what actually moves single-request throughput (as opposed to
-concurrency, covered above) — llama.cpp supports self-speculative decoding
-via a model's own multi-token-prediction (MTP) head: the model drafts
-several tokens ahead in one pass, then verifies them all against the full
-model in the same step. Unlike `--parallel`, this doesn't trade latency
-for throughput — it's a straight win on a single request, since every
-draft token is checked against the real model before being accepted
-(deterministic sampling, no accuracy loss).
+llama.cpp supports self-speculative decoding via a model's own
+multi-token-prediction (MTP) head: the model drafts several tokens ahead
+in one pass, then verifies them all against the full model in the same
+step. Unlike `--parallel`, this doesn't trade latency for throughput —
+it's a straight win on a single request, since every draft token is
+checked against the real model before being accepted (deterministic
+sampling, no accuracy loss).
 
-**The catch: the GGUF has to be MTP-converted, and ours wasn't — even
-though it looked like it should already work.** Every server log this
-whole time had been printing lines like `model has unused tensor
-blk.64.nextn.eh_proj.weight -- ignoring`, which looked like the draft
-head was already present. Enabling it (`--spec-type draft-mtp
---spec-draft-n-max 3`) against that file failed outright:
+**The catch: the GGUF has to be MTP-converted, and a regular quant isn't
+— even though it looks like it should already work.** Server logs for the
+regular quant print lines like `model has unused tensor
+blk.64.nextn.eh_proj.weight -- ignoring`, which looks like the draft head
+is already present. Enabling it (`--spec-type draft-mtp
+--spec-draft-n-max 3`) against that file fails outright:
 
 ```
 common_speculative_init_result: creating MTP draft context against the target model '...'
@@ -245,74 +195,43 @@ llama_init_from_model: context type MTP requested but model doesn't contain MTP 
 
 Those `nextn` tensors are present in the regular quant but not in a form
 llama.cpp's MTP code recognizes — they're leftover checkpoint artifacts,
-not a usable draft head. The fix was switching to unsloth's
-`Qwen3.6-35B-A3B-MTP-GGUF` repo, which publishes the same `UD-Q4_K_XL`
-quant we were already running, properly MTP-converted (~500MB larger,
-same weights otherwise — see [SOFTWARE.md](SOFTWARE.md)). That one
-loaded cleanly with the same flags and the MTP draft context actually
-initialized.
+not a usable draft head. The fix is unsloth's
+`Qwen3.6-35B-A3B-MTP-GGUF` repo, which publishes the same quants
+properly MTP-converted (~500MB larger, same weights otherwise — see
+[SOFTWARE.md](SOFTWARE.md)). That loads cleanly with the same flags and
+the MTP draft context actually initializes.
 
-Measured with the same live single-request test used earlier
-(`/completion`, `n_predict: 512`, `temperature: 0`, single slot):
+### Measured gain and tuning sweep
 
-| | Generation (t/s) |
-|---|---:|
-| Baseline (no MTP) | ~19.2–19.7 |
-| MTP (`--spec-draft-n-max 3`) | ~21.7–22.5 |
-| Gain | **+15–17%** |
+Live single-request test against `llama-server` (Qwen3.6-35B-A3B
+Q4_K_XL, `-ts 1/1/1`, 16K context, one slot): `/completion`,
+`n_predict: 512`, `temperature: 0` unless noted, prompt cache off, one
+warm-up request then 4 measured requests per configuration.
 
-Worth being upfront that this is smaller than MTP's headline numbers
-elsewhere (community reports of ~1.5–2x on other hardware). The likely
-reason: speculative decoding's payoff depends on how cheap the draft
-step is relative to the main model's per-token cost, and that ratio is
-evidently less favorable on this hardware/quant/prompt combination than
-on the setups those bigger numbers came from. Still a real, deterministic
-gain with no measured downside, so it's now the production configuration
-(see [SOFTWARE.md](SOFTWARE.md)) — the original non-MTP model file has
-been deleted.
+| Config | Generation (t/s) | vs. no MTP | MTP draft acceptance |
+|---|---:|---:|---:|
+| No MTP | 66.5 (66.0–66.8) | — | — |
+| `n-max=3, p-min=0.0` | 90.8 (90.7–90.8) | +36.5% | 67.5% |
+| `n-max=5, p-min=0.0` | 68.3 (68.2–68.3) | +2.7% | 43.0% |
+| **`n-max=3, p-min=0.75`** | **92.4** (92.0–92.7) | **+39.0%** | 93.9% |
+| `n-max=4, p-min=0.75` | 90.3 (90.1–90.4) | +35.8% | 93.1% |
+| `n-max=3, p-min=0.75`, realistic sampler (temp 0.7, top-p 0.8, top-k 20) | 87.0 (84.4–90.1) | +30.8% | 90.6% |
 
-## MTP tuning sweep: p-min mattered, n-max and sampler didn't
+**Raising the acceptance threshold (`--spec-draft-p-min 0.75`) is the
+real lever.** With the default threshold, drafting further ahead
+(`n-max=5`) erased essentially all of the MTP gain: the later draft
+tokens rarely match what the full model would produce (43% acceptance),
+so the extra verify work is mostly wasted. With `p-min 0.75`, acceptance
+rises to ~94% and the gain reaches +39%; widening the window further
+(`n-max=4`) adds nothing.
 
-The MTP result above used llama.cpp's defaults for everything except
-`--spec-draft-n-max`. Since the patches repo's own 120 t/s number used a
-wider verify batch (width-5) and a tuned acceptance threshold, it was
-worth checking whether tuning those flags on our hardware helped the
-same way. Same live single-request test as before (`/completion`,
-`n_predict: 512`, single slot):
+**A realistic sampler costs about 6%.** Sampling with temperature 0.7,
+top-p 0.8 and top-k 20 lowers draft acceptance (90.6% vs. 93.9%) and
+generation speed (87.0 vs. 92.4 t/s), though MTP still gives +31% over no
+MTP. None of this touches output correctness — speculative decoding
+always verifies drafted tokens against the full model before accepting
+them, so every configuration produces identical output for a given
+prompt and seed; only throughput differs.
 
-| Config | Generation (t/s) | vs. no-MTP baseline |
-|---|---:|---:|
-| No MTP | ~19.2–19.7 | — |
-| `n-max=3, p-min=0.0` (original production) | ~21.7–22.5 | +15–17% |
-| `n-max=5, p-min=0.0` | ~19.2–19.6 | ~0% |
-| **`n-max=3, p-min=0.75`** | **~23.9–24.4** | **+23–25%** |
-| `n-max=4, p-min=0.75` | ~24.0–24.2 | +23–25% (no gain over n-max=3) |
-| `n-max=3, p-min=0.75`, realistic sampler (temp 0.7, top-p 0.8, top-k 20) | ~23.9–24.3 | same as greedy |
-
-**Widening the draft window alone made things worse, not better.**
-`n-max=5` with the default acceptance threshold erased essentially all of
-the MTP gain. The likely reason: drafting further ahead means the later
-draft tokens are less likely to match what the full model would actually
-produce, so a wider window without a correspondingly tuned threshold just
-adds verify overhead for tokens that mostly get rejected anyway.
-
-**Raising the acceptance threshold (`--spec-draft-p-min 0.75`) was the
-real lever**, on top of the original `n-max=3` — an additional +8–9%
-beyond the untuned MTP result, for **+23–25% total** over no-MTP. Once
-that threshold is set correctly, widening the draft window further
-(`n-max=4`) added nothing measurable.
-
-**Sampler strategy made no difference either way** — greedy
-(`temperature: 0`) and the "realistic" sampler (temperature 0.7, top-p
-0.8, top-k 20) that the patches repo's own numbers used produced
-statistically indistinguishable throughput here. Whatever sampler-
-dependent effect on MTP acceptance the patches repo's README warns about
-("sampler settings change conclusions here by several points"), it
-doesn't show up as a throughput difference in this test.
-
-Production now runs `--spec-draft-n-max 3 --spec-draft-p-min 0.75` (see
-[SOFTWARE.md](SOFTWARE.md)). None of this tuning touches output
-correctness — speculative decoding always verifies drafted tokens
-against the full model before accepting them, so every configuration
-above produces identical output for a given prompt and seed; only
-throughput differs.
+Production runs `--spec-draft-n-max 3 --spec-draft-p-min 0.75` (see
+[SOFTWARE.md](SOFTWARE.md)).

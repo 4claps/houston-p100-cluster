@@ -18,13 +18,6 @@ Further runs and write-ups will be added to this file and that one over
 time. Read everything below as "what the data shows so far", not a final
 word.
 
-**Correction (2026-09-24).** An earlier version of this doc concluded
-that three cards were about 4x *slower* than one or two. That was wrong:
-the original 3-GPU run had its GPU core clocks stuck at 405 MHz the whole
-time, about 30% of the ~1,328 MHz every other run used. Re-running the
-identical configuration gave the same speed as two cards. Details in
-[Correction](#correction-the-first-3-gpu-run-was-clock-locked) below.
-
 What the data shows so far:
 
 - **Card count barely matters for single-stream throughput.** Generation
@@ -41,66 +34,23 @@ What the data shows so far:
 Questions the data so far leaves open:
 
 - How the different card counts behave under concurrent load. All the
-  runs here are single-stream, and the batching sweep in
-  [BENCHMARKING.md](BENCHMARKING.md) was measured during the clock-lock
-  problem described below, so it needs re-measuring.
+  runs here are single-stream; [BENCHMARKING.md](BENCHMARKING.md) has a
+  3-card concurrency sweep.
 - How much of the one-card vs. multi-card gap is the card count vs. the
   Q2_K_XL vs. Q4_K_XL quant, which this series can't separate.
-- What caused the stuck low-clock state (unknown; it hasn't recurred).
 - How other models behave on the same hardware.
 
-## Correction: the first 3-GPU run was clock-locked
+## A note on an early invalid run
 
-The first version of this doc found three cards about 4x slower than two
-or one, and spent several sections explaining why (PCIe lane allocation,
-quant, an extra pipeline hop). None of that holds up.
+An early 3-GPU run was discarded and rerun: its GPU core clocks turned
+out to be stuck at the idle clock (405 MHz) for the whole run, so it
+measured a card in a low-power state, not the hardware. Every result in
+this doc was checked to have run at the normal ~1,328 MHz under load.
+The cause of the stuck clocks is unknown and it hasn't recurred. The
+lesson is in the method notes below: check GPU clocks, and rerun a
+surprising result before explaining it.
 
-**What went wrong.** Telemetry from the first 3-GPU run shows every GPU's
-core clock at exactly **405 MHz** for the entire run (all 7,629 samples
-where a GPU was busy). 405 MHz is the P100's idle clock. Every other leg
-ran at roughly 1,328 MHz under load:
-
-| Run | GPU core clock while busy |
-|---|---:|
-| 3 cards, first attempt | 405 MHz (flat) |
-| 3 cards, rerun | 1,327 MHz avg |
-| 2 cards (all three lane variants, and the Q4_K_XL run) | 1,326–1,328 MHz avg |
-| 1 card | 1,328 MHz avg |
-
-The low GPU power that run showed (~34 W per card) was the same symptom.
-An earlier version of this doc and of `BENCHMARKING.md` read it as normal
-memory-bound behavior.
-
-**The rerun.** The identical server command line (checked line by line
-against the production unit) and harness, run on 2026-09-24 with the
-clocks behaving, gave 85.2 t/s generation instead of 20.8 — the same as
-two cards.
-
-**Cause: unknown.** The state had cleared by the time of the 2-GPU runs,
-after reboots and hardware changes in between, and it has not come back.
-One unverified suspect is a leftover low-power/clock setting from the
-earlier GPU power-management experiments (see `BENCHMARKING.md`).
-
-**What this invalidates:**
-
-- The "three cards is ~4x slower" finding, and the explanations built on
-  it (an extra pipeline hop adding latency, PCIe lane starvation).
-- The first 3-GPU throughput, power and task-time numbers (kept below
-  for the record, marked invalid).
-- The absolute throughput numbers in `BENCHMARKING.md`, which were
-  measured the same day (see the erratum there). The same `llama-bench`
-  command that gave 19.66 t/s then gives 70.63 t/s now.
-
-**What it doesn't change:** the lane-width tests, the quant comparison,
-and the 2-GPU and 1-GPU results were all measured at normal clocks. The
-PCIe lane-allocation and USB 3 behavior described below is real hardware
-behavior; it just wasn't the cause of any speed difference.
-
-**Lesson:** a surprising result needs a same-state rerun before anyone
-builds explanations on it, and the telemetry should be checked for GPU
-clock speeds. The clue was in the data from the first run.
-
-## 3-GPU leg (Q4_K_XL, rerun 2026-09-24)
+## 3-GPU leg (Q4_K_XL)
 
 Model: `Qwen3.6-35B-A3B-MTP-UD-Q4_K_XL.gguf`, MTP speculative decoding
 (`--spec-draft-n-max 3 --spec-draft-p-min 0.75`), `-ts 1/1/1`, layer
@@ -159,52 +109,6 @@ middle slot (`02:00.0`, x8), at 69°C average and 75°C peak. (The
 telemetry columns GPU0-GPU2 are ordered by card UUID, not slot: GPU0 is
 `03:00.0`, GPU1 is `01:00.0` and GPU2 is `02:00.0`.)
 
-### First attempt (invalid — GPU clocks were locked at 405 MHz)
-
-Kept for the record only. Same model and flags as the rerun above, run
-on 2026-09-22. **Do not use these numbers**; see
-[Correction](#correction-the-first-3-gpu-run-was-clock-locked).
-
-**Hermes agent-task results (27 task-reps):**
-
-| Task | ok% | avg wall |
-|---|---:|---:|
-| err_python_env | 100% | 231s |
-| err_replay_patch | 100% | 225s |
-| err_ambiguous_edit | 100% | 243s |
-| err_case_search | 100% | 214s |
-| err_hidden_search | 67% | 246s |
-| err_big_output | 100% | 219s |
-| err_multi_dir | 100% | 228s |
-| err_inline_script | 100% | 217s |
-| err_big_file_read | 100% | 361s |
-| **TOTAL** | **96%** | **243s** |
-
-**Throughput** (95 real requests, from `llama-server`'s own per-request timings):
-
-| | min | max | avg |
-|---|---:|---:|---:|
-| Prompt processing (t/s) | 19.9 | 119.2 | 67.3 |
-| Generation (t/s) | 15.3 | 27.0 | 20.8 |
-
-**System telemetry** (3,253 samples, ~1h48m, 2s interval, via `node_exporter` + `nvidia_gpu_exporter`):
-
-| Metric | min | max | avg |
-|---|---:|---:|---:|
-| CPU power (W) | 21.7 | 60.8 | 55.5 |
-| CPU package temp (°C) | 44.0 | 73.0 | 66.1 |
-| CPU avg clock (MHz) | 3396.7 | 3772.7 | 3633.0 |
-| GPU0 power (W) | 25.2 | 54.7 | 33.8 |
-| GPU0 temp (°C) | 35.0 | 39.0 | 38.0 |
-| GPU0 utilization (%) | 0 | 100 | 47.4 |
-| GPU1 power (W) | 27.1 | 48.7 | 34.7 |
-| GPU1 temp (°C) | 47.0 | 52.0 | 50.6 |
-| GPU1 utilization (%) | 0 | 100 | 49.0 |
-| GPU2 power (W) | 28.5 | 50.8 | 36.3 |
-| GPU2 temp (°C) | 41.0 | 46.0 | 44.1 |
-| GPU2 utilization (%) | 0 | 100 | 46.5 |
-| Shroud fan speed (RPM) | 1443 | 1755 | 1654.8 |
-
 ## 2-GPU leg (Q3_K_XL, x16/x16)
 
 Model: `Qwen3.6-35B-A3B-MTP-UD-Q3_K_XL.gguf`, same MTP flags
@@ -216,10 +120,7 @@ service stopped for the duration of this leg).
 
 This leg was run right after removing the third P100. Getting the two
 remaining cards to full x16/x16 took some detective work, recorded here
-because the board has non-obvious behavior. (At the time this was
-suspected of explaining a large speed difference against the 3-GPU run;
-that difference turned out to be the clock-lock problem described in the
-[Correction](#correction-the-first-3-gpu-run-was-clock-locked), not lanes.)
+because the board has non-obvious behavior.
 
 On this board the PCIe link widths depend on which slots are populated:
 **x16/x8/x8** across three P100s, and **x16/x16** with only two P100s in
@@ -312,10 +213,7 @@ Q4_K_XL result: 85.2 vs. 85.0 t/s generation.)
 ## 2-GPU lane-configuration variants (x16/x8, x8/x8)
 
 The two remaining P100s were physically moved into different PCIe slot
-combinations to test whether link width affects throughput. (This was
-done when the 3-GPU result still looked 4x slower and lane width was a
-suspect; that result has since been found invalid, but the lane-width
-question stands on its own.) Same Q3_K_XL model and flags as the
+combinations to test whether link width affects throughput. Same Q3_K_XL model and flags as the
 x16/x16 leg above; only the physical slot layout changes between runs.
 
 ### x16/x8
@@ -519,11 +417,9 @@ x16/x16 configuration (the lane variants were within noise of it).
 | 2 | Q3_K_XL | 82.0 | 283.9 | 72s | 89% |
 | 1 | Q2_K_XL | 76.0 | 247.7 | 98s | 89% |
 
-The 3-card row is the 2026-09-24 rerun; the first attempt (20.8 t/s) is
-excluded because its GPU clocks were locked — see the
-[Correction](#correction-the-first-3-gpu-run-was-clock-locked). The 2-GPU
-Q4_K_XL row comes from
-[MISCELLANEOUS-BENCHMARKS.md](MISCELLANEOUS-BENCHMARKS.md#qwen36-35b-a3b-moe-q4_k_xl-2x-p100).
+The 2-GPU Q4_K_XL row comes from
+[MISCELLANEOUS-BENCHMARKS.md](MISCELLANEOUS-BENCHMARKS.md#qwen36-35b-a3b-moe-q4_k_xl-2x-p100),
+run specifically to separate quant from card count.
 
 - **Card count barely matters for single-stream speed.** Three cards and
   two cards give the same generation speed (85.2 vs. 85.0 t/s) and
@@ -541,10 +437,10 @@ Q4_K_XL row comes from
   which is within the noise of the one unstable task
   (`err_hidden_search`); the series doesn't show a clear quality cost
   from dropping cards or quant levels for this workload.
-- **Concurrency was not tested** on any card count. The 8-way
-  concurrency sweet spot in `BENCHMARKING.md` was measured during the
-  clock-lock problem, so it needs re-measuring. Under concurrent load,
-  extra cards may pay off in ways they can't at batch 1.
+- **Concurrency was not tested** here on any card count. The 3-card
+  concurrency sweep in `BENCHMARKING.md` peaks at 8 parallel requests;
+  under concurrent load, extra cards may pay off in ways they can't at
+  batch 1.
 
 ## Power draw
 
@@ -564,9 +460,7 @@ other two 2-GPU lane variants (x16/x8, x8/x8) draw 267 and 274 W — within
 about 2% of the x16/x16 figure, consistent with link width not mattering.
 
 **General numbers:** roughly **200 W** with one card, **270 W** with two,
-and **330 W** with three, for GPUs plus CPU while the workload runs. The
-first 3-GPU attempt's 160 W figure is excluded: its cards were clocked
-down to 405 MHz.
+and **330 W** with three, for GPUs plus CPU while the workload runs.
 
 What these numbers do and don't cover:
 
@@ -615,18 +509,15 @@ under load** (~1,328 MHz here; anything near 405 MHz means the cards are
 stuck in a low-power state).
 
 Battery wall time: ~33-48 minutes for every valid leg (34 minutes for
-the 3-GPU rerun, 33-45 for the 2-GPU legs, ~48 for the 1-GPU leg). The
-first 3-GPU attempt took 1h48m because its cards were clock-locked.
+the 3-GPU rerun, 33-45 for the 2-GPU legs, ~48 for the 1-GPU leg).
 
 Pitfalls worth not repeating:
 
-- **Check GPU clocks before trusting any result.** A run with the cards
-  stuck at 405 MHz looked like a real finding (a ~4x "three-card
-  penalty") and drove several sections of explanation before a same-
-  state rerun showed it was an artifact. Low GPU power under load is the
-  tell.
-- A surprising result deserves a rerun in the same hardware and software
-  state before explanations are built on it.
+- **Check GPU clocks before trusting any result.** An early run with the
+  cards stuck at their 405 MHz idle clock looked like a real finding until
+  a same-state rerun showed it was an artifact. Low GPU power under load
+  is the tell, and a surprising result deserves a rerun before
+  explanations are built on it.
 - `llama-bench` does not support `--spec-type`/MTP flags — MTP is a
   `llama-server`-only feature. Use the real Hermes harness, not
   `llama-bench`, for anything meant to match this methodology.
