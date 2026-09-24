@@ -32,8 +32,9 @@ are written down somewhere durable.
   speed; PCIe lane width didn't matter; and an early result was
   invalidated by GPU clocks stuck at idle speed
 - [MISCELLANEOUS-BENCHMARKS.md](MISCELLANEOUS-BENCHMARKS.md) — one-off
-  side tests that grew out of the GPU scaling benchmarks, such as running the
-  production Qwen3.6 quant on two cards and a dense Qwen3.8-27B model
+  side tests that grew out of the GPU scaling benchmarks: the production
+  Qwen3.6 quant on two and three cards, a dense Qwen3.8-27B model, a P2P
+  and tensor-split check, and NVIDIA's Nemotron-3.5-Lightning model
 
 ## Ongoing benchmarking
 

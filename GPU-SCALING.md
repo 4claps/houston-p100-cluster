@@ -154,8 +154,10 @@ MTP draft acceptance averaged 96.0%. The `llama-bench` sanity check
 
 GPU core clocks averaged 1,327 MHz (min 1,189, max 1,328). Each card is
 busy well under half the time (37–44% utilization), since layer split
-runs the cards one after another; the third card (GPU2, at x8) runs the
-warmest.
+runs the cards one after another. The warmest card is the one in the
+middle slot (`02:00.0`, x8), at 69°C average and 75°C peak. (The
+telemetry columns GPU0-GPU2 are ordered by card UUID, not slot: GPU0 is
+`03:00.0`, GPU1 is `01:00.0` and GPU2 is `02:00.0`.)
 
 ### First attempt (invalid — GPU clocks were locked at 405 MHz)
 
@@ -630,6 +632,12 @@ Pitfalls worth not repeating:
   `llama-bench`, for anything meant to match this methodology.
   (`llama-bench` was used only for quick split-mode sanity checks in the
   miscellaneous doc, never for the results.)
+- The metrics poller orders its per-card columns (GPU0, GPU1, ...) by
+  card UUID, not by PCI slot or `nvidia-smi` index. Totals are
+  unaffected, but a per-card column can't be read as "the card in slot
+  N" without mapping UUIDs to slots (`nvidia-smi --query-gpu=index,uuid,pci.bus_id`).
+  In the two-card lane-variant legs the per-card power and temperature
+  columns may be swapped between the two cards.
 - Hermes Agent hard-requires >=64K context on the *actual* per-slot
   budget, not just what's claimed in its config — `--ctx-size` divides
   evenly across `--parallel` slots, so verify the real per-slot number.
