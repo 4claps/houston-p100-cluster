@@ -29,8 +29,7 @@ are written down somewhere durable.
   width tests and power draw. Headline results: for single-stream use,
   one, two and three cards all generate at roughly the same speed (about
   76-85 tokens/s on the production model), so extra cards buy VRAM, not
-  speed; PCIe lane width didn't matter; and an early result was
-  invalidated by GPU clocks stuck at idle speed
+  speed; and PCIe lane width didn't matter
 - [MISCELLANEOUS-BENCHMARKS.md](MISCELLANEOUS-BENCHMARKS.md) — one-off
   side tests that grew out of the GPU scaling benchmarks: the production
   Qwen3.6 quant on two and three cards, a dense Qwen3.8-27B model, a P2P

@@ -39,9 +39,9 @@ was used only to pick the split mode, not for the results below:
 | `row` | — failed to load the model — | — |
 
 Row split doesn't load this model on two 16GB cards, so layer split is
-the only working mode. (The 3.07 t/s three-card figure for this model in
-`BENCHMARKING.md` was measured while the GPU clocks were stuck low — see
-the erratum there — so it isn't comparable to the number above.)
+the only working mode. For reference, the patched `llama-bench` decode for this model on three
+cards is 13.2 t/s (see [BENCHMARKING.md](BENCHMARKING.md)), the same as
+the 13.4 t/s above on two cards.
 
 Server flags used for the battery:
 
@@ -140,6 +140,53 @@ card, peaks ~218W): a dense 27B model reads every weight for every
 token, so the cards stay busy rather than idling between MoE expert
 lookups.
 
+### 3 cards
+
+The same run on all three cards (`-ts 1/1/1`, x16/x8/x8) with identical
+settings (7,500-token thinking budget, 900s task cap, 12,288 max tokens).
+Both runs share the settings above, so the two card counts compare
+directly.
+
+| Task | ok% | avg wall |
+|---|---:|---:|
+| err_python_env | 100% | 252s |
+| err_replay_patch | 100% | 205s |
+| err_ambiguous_edit | 100% | 235s |
+| err_case_search | 100% | 259s |
+| err_hidden_search | 100% | 162s |
+| err_big_output | 100% | 170s |
+| err_multi_dir | 100% | 166s |
+| err_inline_script | 67% | 583s |
+| err_big_file_read | 67% | 386s |
+| **TOTAL** | **93%** | **269s** |
+
+The two misses: `err_inline_script` rep 1 hit the 900s task cap (the only
+timeout in any Qwen3.8 run; the slowest task on two cards took 772s), and
+`err_big_file_read` rep 2 was a context overflow, the same failure seen
+elsewhere in this series. The thinking budget never fired (longest
+generation 4,826 tokens).
+
+| | 2 cards | 3 cards |
+|---|---:|---:|
+| Ok% | 93% | 93% |
+| Avg task wall | 291s | 269s |
+| Prompt processing avg (min–max) | 123.0 (24.2–191.7) t/s | 157.0 (64.6–251.4) t/s |
+| Generation avg (min–max) | 12.0 (9.4–13.2) t/s | 11.9 (9.9–13.2) t/s |
+| Busy GPUs + CPU, average power | 314 W | 371 W (peak 643 W) |
+| Energy per task | ~91 kJ | ~100 kJ |
+
+As with the MoE models, a third card adds prompt-processing speed here
+(+28%) but no generation speed, and costs about 57 W more. Battery wall
+time was about 126 minutes (3,402 telemetry samples).
+
+Per card on three cards, by slot: the x16 card (`01:00.0`) averaged 98 W
+and 56.5°C (max 65); the middle-slot x8 card (`02:00.0`) averaged 116 W
+and 73.7°C (**max 80°C**); the other x8 card (`03:00.0`) averaged 102 W
+and 52.5°C (max 59). The middle-slot card's core clock dropped as low as
+**810 MHz** at its hottest (average across busy cards 1,322 MHz), the
+clearest thermal throttling in any run so far. Sustained dense-model load
+is the case where that card's airflow matters most.
+
 ## Qwen3.6-35B-A3B (MoE), Q4_K_XL, 2x P100
 
 Model: `Qwen3.6-35B-A3B-MTP-UD-Q4_K_XL.gguf` — the production model and
@@ -233,10 +280,6 @@ clocks):
 - **A third card adds no single-stream speed.** Three cards and two
   cards give the same generation speed (85.2 vs. 85.0 t/s), so for
   single-stream use the extra cards are about capacity, not speed.
-- **This replaces an earlier, wrong conclusion.** The first version of
-  this section said three cards were ~4x slower than two, based on the
-  original 3-GPU run (20.8 t/s). That run had its GPU clocks stuck at
-  405 MHz; see the Correction in [GPU-SCALING.md](GPU-SCALING.md#correction-the-first-3-gpu-run-was-clock-locked).
 - Quality is the same: 93% on both two and three cards, with the misses
   in the noisy `err_hidden_search` task.
 
