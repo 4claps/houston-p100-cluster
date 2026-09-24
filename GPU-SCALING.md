@@ -14,32 +14,154 @@ shrinking VRAM: Q4_K_XL (3 GPU) -> Q3_K_XL (2 GPU) -> Q2_K_XL (1 GPU).
 at the start is done — 3-GPU, 2-GPU in three PCIe lane configurations
 (x16/x16, x16/x8, x8/x8), and 1-GPU — and side tests that grew out of
 the results live in [MISCELLANEOUS-BENCHMARKS.md](MISCELLANEOUS-BENCHMARKS.md).
-But the results raised as many questions as they answered, and further
-runs and write-ups will be added to this file and that one over time.
-Read everything below as "what the data shows so far", not a final word.
+Further runs and write-ups will be added to this file and that one over
+time. Read everything below as "what the data shows so far", not a final
+word.
+
+**Correction (2026-09-24).** An earlier version of this doc concluded
+that three cards were about 4x *slower* than one or two. That was wrong:
+the original 3-GPU run had its GPU core clocks stuck at 405 MHz the whole
+time, about 30% of the ~1,328 MHz every other run used. Re-running the
+identical configuration gave the same speed as two cards. Details in
+[Correction](#correction-the-first-3-gpu-run-was-clock-locked) below.
 
 What the data shows so far:
 
+- **Card count barely matters for single-stream throughput.** Generation
+  averages 85.2 t/s on three cards, 85.0 on two, and 76.0 on one (the
+  one-card run uses a smaller quant so the model fits).
 - **PCIe link width doesn't matter for this workload.** Throughput is
   statistically identical across the three 2-GPU lane variants.
-- **Going from three cards to two or one made single-stream throughput
-  dramatically better, not worse** (~4x). See the summary table at the
-  end of the 1-GPU section.
+- **Quant doesn't matter for speed either.** Q4_K_XL and Q3_K_XL run at
+  the same speed on two cards (85.0 vs. 82.0 t/s).
+- **Extra cards cost power, not speed:** roughly 200 W, 270 W and 327 W
+  (GPUs plus CPU) with one, two and three cards, for about the same
+  single-stream speed. What a second or third card buys is VRAM.
 
 Questions the data so far leaves open:
 
-- How the fewer-card configurations behave under concurrent load. The
-  batching sweep in [BENCHMARKING.md](BENCHMARKING.md) was measured on
-  three cards, and all the runs here are single-stream.
-- How much of the one-card vs. two-card gap is the card count vs. the
+- How the different card counts behave under concurrent load. All the
+  runs here are single-stream, and the batching sweep in
+  [BENCHMARKING.md](BENCHMARKING.md) was measured during the clock-lock
+  problem described below, so it needs re-measuring.
+- How much of the one-card vs. multi-card gap is the card count vs. the
   Q2_K_XL vs. Q4_K_XL quant, which this series can't separate.
+- What caused the stuck low-clock state (unknown; it hasn't recurred).
 - How other models behave on the same hardware.
 
-## 3-GPU leg (Q4_K_XL, current production config)
+## Correction: the first 3-GPU run was clock-locked
+
+The first version of this doc found three cards about 4x slower than two
+or one, and spent several sections explaining why (PCIe lane allocation,
+quant, an extra pipeline hop). None of that holds up.
+
+**What went wrong.** Telemetry from the first 3-GPU run shows every GPU's
+core clock at exactly **405 MHz** for the entire run (all 7,629 samples
+where a GPU was busy). 405 MHz is the P100's idle clock. Every other leg
+ran at roughly 1,328 MHz under load:
+
+| Run | GPU core clock while busy |
+|---|---:|
+| 3 cards, first attempt | 405 MHz (flat) |
+| 3 cards, rerun | 1,327 MHz avg |
+| 2 cards (all three lane variants, and the Q4_K_XL run) | 1,326–1,328 MHz avg |
+| 1 card | 1,328 MHz avg |
+
+The low GPU power that run showed (~34 W per card) was the same symptom.
+An earlier version of this doc and of `BENCHMARKING.md` read it as normal
+memory-bound behavior.
+
+**The rerun.** The identical server command line (checked line by line
+against the production unit) and harness, run on 2026-09-24 with the
+clocks behaving, gave 85.2 t/s generation instead of 20.8 — the same as
+two cards.
+
+**Cause: unknown.** The state had cleared by the time of the 2-GPU runs,
+after reboots and hardware changes in between, and it has not come back.
+One unverified suspect is a leftover low-power/clock setting from the
+earlier GPU power-management experiments (see `BENCHMARKING.md`).
+
+**What this invalidates:**
+
+- The "three cards is ~4x slower" finding, and the explanations built on
+  it (an extra pipeline hop adding latency, PCIe lane starvation).
+- The first 3-GPU throughput, power and task-time numbers (kept below
+  for the record, marked invalid).
+- The absolute throughput numbers in `BENCHMARKING.md`, which were
+  measured the same day (see the erratum there). The same `llama-bench`
+  command that gave 19.66 t/s then gives 70.63 t/s now.
+
+**What it doesn't change:** the lane-width tests, the quant comparison,
+and the 2-GPU and 1-GPU results were all measured at normal clocks. The
+PCIe lane-allocation and USB 3 behavior described below is real hardware
+behavior; it just wasn't the cause of any speed difference.
+
+**Lesson:** a surprising result needs a same-state rerun before anyone
+builds explanations on it, and the telemetry should be checked for GPU
+clock speeds. The clue was in the data from the first run.
+
+## 3-GPU leg (Q4_K_XL, rerun 2026-09-24)
 
 Model: `Qwen3.6-35B-A3B-MTP-UD-Q4_K_XL.gguf`, MTP speculative decoding
-(`--spec-draft-n-max 3 --spec-draft-p-min 0.75`), `-ts 1/1/1`, `--parallel
-1 --ctx-size 65536`.
+(`--spec-draft-n-max 3 --spec-draft-p-min 0.75`), `-ts 1/1/1`, layer
+split, `--parallel 1 --ctx-size 65536`, q8_0 KV cache. This is the exact
+production command line, launched manually with the production service
+stopped. Cards at x16/x8/x8. Standard harness settings (600s task cap,
+8192 max tokens).
+
+**Hermes agent-task results (27 task-reps):**
+
+| Task | ok% | avg wall |
+|---|---:|---:|
+| err_python_env | 100% | 64s |
+| err_replay_patch | 100% | 57s |
+| err_ambiguous_edit | 100% | 89s |
+| err_case_search | 100% | 70s |
+| err_hidden_search | 33% | 93s |
+| err_big_output | 100% | 47s |
+| err_multi_dir | 100% | 68s |
+| err_inline_script | 100% | 88s |
+| err_big_file_read | 100% | 59s |
+| **TOTAL** | **93%** | **70s** |
+
+**Throughput** (113 real requests, from `llama-server`'s own per-request timings):
+
+| | min | max | avg |
+|---|---:|---:|---:|
+| Prompt processing (t/s) | 52.2 | 622.1 | 325.8 |
+| Generation (t/s) | 68.8 | 98.1 | 85.2 |
+
+MTP draft acceptance averaged 96.0%. The `llama-bench` sanity check
+(layer split, no MTP) gave pp512 459.7 t/s and tg128 70.6 t/s.
+
+**System telemetry** (925 samples, ~34min, 2s interval):
+
+| Metric | min | max | avg |
+|---|---:|---:|---:|
+| CPU power (W) | 23.4 | 61.3 | 52.6 |
+| CPU package temp (°C) | 45.0 | 64.0 | 59.1 |
+| CPU avg clock (MHz) | 3292.0 | 3751.4 | 3623.0 |
+| GPU0 power (W) | 31.3 | 190.5 | 94.1 |
+| GPU0 temp (°C) | 39.0 | 57.0 | 52.7 |
+| GPU0 utilization (%) | 0 | 100 | 44.1 |
+| GPU1 power (W) | 33.7 | 184.7 | 85.1 |
+| GPU1 temp (°C) | 46.0 | 61.0 | 56.0 |
+| GPU1 utilization (%) | 0 | 100 | 36.5 |
+| GPU2 power (W) | 37.3 | 199.4 | 94.7 |
+| GPU2 temp (°C) | 52.0 | 75.0 | 69.4 |
+| GPU2 utilization (%) | 0 | 100 | 36.9 |
+| Shroud fan speed (RPM) | 1724 | 3054 | 2687.7 |
+
+GPU core clocks averaged 1,327 MHz (min 1,189, max 1,328). Each card is
+busy well under half the time (37–44% utilization), since layer split
+runs the cards one after another; the third card (GPU2, at x8) runs the
+warmest.
+
+### First attempt (invalid — GPU clocks were locked at 405 MHz)
+
+Kept for the record only. Same model and flags as the rerun above, run
+on 2026-09-22. **Do not use these numbers**; see
+[Correction](#correction-the-first-3-gpu-run-was-clock-locked).
 
 **Hermes agent-task results (27 task-reps):**
 
@@ -81,11 +203,6 @@ Model: `Qwen3.6-35B-A3B-MTP-UD-Q4_K_XL.gguf`, MTP speculative decoding
 | GPU2 utilization (%) | 0 | 100 | 46.5 |
 | Shroud fan speed (RPM) | 1443 | 1755 | 1654.8 |
 
-**PCIe topology at the time of this leg**: two of the three slots trained
-at x8 instead of their native x16 (see `HARDWARE.md`) — this matters a
-lot for interpreting the 2-GPU leg below, where the topology changed
-alongside the card count.
-
 ## 2-GPU leg (Q3_K_XL, x16/x16)
 
 Model: `Qwen3.6-35B-A3B-MTP-UD-Q3_K_XL.gguf`, same MTP flags
@@ -93,65 +210,43 @@ Model: `Qwen3.6-35B-A3B-MTP-UD-Q3_K_XL.gguf`, same MTP flags
 1 --ctx-size 65536`. Manual `llama-server` on port 8080 (production
 service stopped for the duration of this leg).
 
-**Confounded at first — resolved by the lane variants below.** Between the
-3-GPU and this 2-GPU leg, *two* things changed at once, not one:
+### Hardware bring-up notes: PCIe lanes and USB 3
 
-1. The intended variable: one P100 physically removed (3 → 2 cards).
-2. An **unintended change in PCIe lane allocation**. On this board the
-   link widths depend on which slots are populated. The 3-GPU leg ran
-   with an **x16/x8/x8** split across the three P100s. With only two
-   P100s, both in the dedicated x16 slots, both train at a clean
-   **x16/x16** — and that is the state this leg's numbers were measured
-   under. Along the way, with a GT 610 display card added next to the
-   two P100s (see below for why), the lanes split x16/x8/x8 across the
-   three cards, which left the second P100 at **x8** — downgraded from
-   its native x16, per `lspci`/`nvidia-smi`.
+This leg was run right after removing the third P100. Getting the two
+remaining cards to full x16/x16 took some detective work, recorded here
+because the board has non-obvious behavior. (At the time this was
+suspected of explaining a large speed difference against the 3-GPU run;
+that difference turned out to be the clock-lock problem described in the
+[Correction](#correction-the-first-3-gpu-run-was-clock-locked), not lanes.)
 
-   Getting there was harder than it sounds, and the cause wasn't the
-   cards:
+On this board the PCIe link widths depend on which slots are populated:
+**x16/x8/x8** across three P100s, and **x16/x16** with only two P100s in
+the dedicated x16 slots. Getting to x16/x16 was harder than it sounds,
+and the cause wasn't the cards:
 
-   - The box is headless with no integrated graphics, and its network
-     connection is a **USB Wi-Fi dongle that was plugged into a USB 3
-     port**.
-   - With just the two P100s in the x16 slots, the machine appeared not
-     to POST. With no integrated graphics there was no video output to
-     show why.
-   - Adding a GT 610 as a display card made it boot normally, but at the
-     x16/x8/x8 lane split above. (The GT 610 only went in at this point
-     — it can't be fitted alongside three P100s, since the P100s occupy
-     all three double-wide slots.)
-   - Moving the GT 610 into the second x16 slot made boot watchable on a
-     monitor. Once logged in at the console the links showed x16/x16 —
-     but the box had **no IP address**.
-   - The reason: **x16/x16 uses up all of the board's PCIe lanes, which
-     disables its USB 3 ports** — including the one the dongle was in.
-     The machine had been booting fine all along; it just had no video
-     and no network.
-   - The fix: move the dongle to a **USB 2 port** and put the P100 in the
-     second x16 slot. Everything then worked as expected, at x16/x16.
+- The box is headless with no integrated graphics, and its network
+  connection is a **USB Wi-Fi dongle that was plugged into a USB 3
+  port**.
+- With just the two P100s in the x16 slots, the machine appeared not
+  to POST. With no integrated graphics there was no video output to
+  show why.
+- Adding a GT 610 as a display card made it boot normally, but at an
+  x16/x8/x8 lane split, which left the second P100 at **x8** — downgraded
+  from its native x16, per `lspci`/`nvidia-smi`. (The GT 610 only went in
+  at this point — it can't be fitted alongside three P100s, since the
+  P100s occupy all three double-wide slots.)
+- Moving the GT 610 into the second x16 slot made boot watchable on a
+  monitor. Once logged in at the console the links showed x16/x16 —
+  but the box had **no IP address**.
+- The reason: **x16/x16 uses up all of the board's PCIe lanes, which
+  disables its USB 3 ports** — including the one the dongle was in.
+  The machine had been booting fine all along; it just had no video
+  and no network.
+- The fix: move the dongle to a **USB 2 port** and put the P100 in the
+  second x16 slot. Everything then worked as expected, at x16/x16.
 
-Since this box has no NVLink/NCCL and uses layer-split tensor parallelism
-(`-sm layer`) — meaning every layer boundary is a cross-GPU hop over
-PCIe — fixing an x8-linked hop is exactly the kind of change that could
-produce a large throughput jump on its own, independent of card count.
-`BENCHMARKING.md`'s own concurrency-scaling section already flags PCIe
-lane starvation as a known bottleneck on this board.
-
-**Evidence this isn't a caching artifact**: the identical 17,773-token
-prompt (`err_big_file_read`) was checked directly against both legs' raw
-logs. 3-GPU: 149.5s flat across all 3 reps (118.9 t/s, no rep-over-rep
-speedup). 2-GPU: 34.3s flat across all 3 reps (517.5 t/s). Both are flat
-from rep 0, so it's not prompt-cache warm-up — the underlying per-request
-compute/transfer cost genuinely dropped, consistent with removing a
-PCIe-bottlenecked hop rather than an artifact of repeated identical
-prompts.
-
-**How this was disentangled**: the same 2-GPU/Q3_K_XL config was then
-re-run with the cards deliberately moved into degraded lane
-configurations — x16/x8, then x8/x8. If link width mattered, throughput
-would have dropped at x16/x8 and further at x8/x8; it didn't (see the
-lane-variant sections below), so the x8→x16 fix was not what made this
-leg fast.
+Whether lane width affects throughput at all is tested in the lane
+variants below. It doesn't.
 
 **Hermes agent-task results (27 task-reps):**
 
@@ -168,11 +263,9 @@ leg fast.
 | err_big_file_read | 100% | 101s |
 | **TOTAL** | **89%** | **72s** |
 
-`err_hidden_search` regressed from 67% (3-GPU) to 0% (2-GPU) — a
-plausible quant-quality effect of stepping down from Q4_K_XL to
-Q3_K_XL, worth watching across the remaining legs since it's the
-opposite direction from the throughput story above (quant made this one
-task worse while topology made throughput much better).
+`err_hidden_search` is the unstable task across the whole series — it
+ranges from 0% to 100% depending on the run, at only 3 reps per cell — so
+no quant effect can be read into this result.
 
 **Throughput** (124 real requests, from `llama-server`'s own per-request timings):
 
@@ -196,12 +289,6 @@ task worse while topology made throughput much better).
 | GPU1 utilization (%) | 0 | 100 | 55.5 |
 | Shroud fan speed (RPM) | 1448 | 2626 | 2358.4 |
 
-GPU power draw roughly tripled vs. the 3-GPU leg (avg ~34W → ~103-114W),
-consistent with the cards actually computing instead of stalling on slow
-cross-GPU PCIe hops — further circumstantial support for the PCIe-fix
-theory above, since idle-on-a-bottleneck looks like low power/low
-utilization and busy-and-unblocked looks like this.
-
 ### Also run with the production quant (Q4_K_XL)
 
 This leg used Q3_K_XL because the quant was being stepped down alongside
@@ -215,16 +302,19 @@ so it was run later as a side test — the full write-up is in
 | Q3_K_XL (this leg) | 82.0 | 283.9 | 72s | 89% |
 | Q4_K_XL (side test) | 85.0 | 302.8 | 83s | 93% |
 
-That is what shows the ~4x speedup over the 3-GPU leg isn't a quant
-effect: the same Q4_K_XL model is ~4x faster on two cards than on three.
+Q4_K_XL is as fast as Q3_K_XL on two cards, so the quant step-downs in
+this series were only ever needed to make the model fit in VRAM, not
+because quant affects speed. (The 3-GPU rerun then matched this
+Q4_K_XL result: 85.2 vs. 85.0 t/s generation.)
 
 ## 2-GPU lane-configuration variants (x16/x8, x8/x8)
 
 The two remaining P100s were physically moved into different PCIe slot
-combinations to isolate how much of the 2-GPU leg's throughput jump was
-the PCIe x8→x16 fix vs. the card-count/quant change itself. Same
-Q3_K_XL model and flags as the x16/x16 leg above; only the physical slot
-layout changes between runs.
+combinations to test whether link width affects throughput. (This was
+done when the 3-GPU result still looked 4x slower and lane width was a
+suspect; that result has since been found invalid, but the lane-width
+question stands on its own.) Same Q3_K_XL model and flags as the
+x16/x16 leg above; only the physical slot layout changes between runs.
 
 ### x16/x8
 
@@ -232,8 +322,7 @@ GPU0 (`01:00.0`) at x16, GPU1 (`03:00.0`) at x8 — same physical cards,
 same Q3_K_XL model/flags as the x16/x16 leg, just GPU1's link
 deliberately left downgraded instead of fixed.
 
-**Result: essentially no difference from x16/x16.** This is the opposite
-of what the confound writeup above predicted.
+**Result: essentially no difference from x16/x16.**
 
 **Hermes agent-task results (27 task-reps):**
 
@@ -250,10 +339,7 @@ of what the confound writeup above predicted.
 | err_big_file_read | 100% | 94s |
 | **TOTAL** | **89%** | **88s** |
 
-Same 89% ok%, same `err_hidden_search` 0/3 pattern as x16/x16 — the
-quant-quality effect is reproducing consistently regardless of PCIe
-topology, as expected (link width shouldn't affect output quality, only
-speed).
+Same 89% ok% and the same `err_hidden_search` 0/3 as x16/x16.
 
 **Throughput** (121 real requests):
 
@@ -283,19 +369,8 @@ statistically indistinguishable from the x16/x16 leg. **Halving GPU1's
 link width from x16 to x8 had no measurable effect** on this single-
 stream, layer-split workload.
 
-This revises the confound theory above: it now looks like **link width
-per hop isn't the dominant factor** — going from 3 GPUs to 2 removed a
-*hop* (one fewer layer-split boundary to cross), and that hop-count
-reduction, not the specific x8→x16 link-speed fix, is the more likely
-explanation for most of the 3-GPU→2-GPU jump. Consistent with this being
-latency-bound (a small per-token activation tensor crossing a PCIe
-boundary) rather than bandwidth-bound — x8 still has plenty of raw
-bandwidth for a tensor this size, so a bandwidth-sensitive workload would
-have shown a clear x16-vs-x8 gap here and one didn't appear. The x8/x8
-leg below is the next data point: if it also shows no meaningful drop
-vs. x16/x16, that would confirm link width doesn't matter much here at
-all, and the entire 3-GPU→2-GPU jump is attributable to hop count (and
-possibly the quant change) rather than any PCIe lane fix.
+So link width isn't a factor here: x8 still has plenty of bandwidth for the
+small per-token activations that cross cards in layer-split mode.
 
 ### x8/x8
 
@@ -303,9 +378,8 @@ Both P100s downgraded to x8 (bus addresses shifted again to `02:00.0`
 and `03:00.0` after the physical move — re-verified before running).
 Same Q3_K_XL model/flags as the other two 2-GPU legs.
 
-**Result: still no meaningful difference from x16/x16 or x16/x8.** This
-confirms the revised theory from the x16/x8 leg: link width isn't the
-driver of the 3-GPU→2-GPU jump.
+**Result: still no meaningful difference from x16/x16 or x16/x8.** Link
+width doesn't matter for this workload.
 
 **Caveat: cooling changed for this leg too, separately from the PCIe
 variable.** GPU1 ran noticeably hotter than in the other two 2-GPU legs
@@ -370,20 +444,7 @@ avg (283.9 / 295.1 / 291.4 t/s) and generation avg (82.0 / 83.2 / 80.8
 t/s) for x16/x16, x16/x8, and x8/x8 respectively are all within noise of
 each other. **PCIe link width, from x16/x16 down to x8/x8, has no
 measurable effect on this single-stream, layer-split workload on this
-box.** That means essentially all of the ~4x throughput jump measured
-going from the 3-GPU leg to any of these 2-GPU variants is attributable
-to something other than the PCIe-lane-downgrade fix originally
-hypothesized. **Update — the quant-vs-card-count question is now
-answered:** `MISCELLANEOUS-BENCHMARKS.md` re-ran the *same* Q4_K_XL model
-as the 3-GPU leg on two cards. It measured 85.0 t/s generation and
-302.8 t/s prompt processing (vs. 20.8 and 67.3 on three cards), and
-Q3_K_XL on two cards measured 82.0 / 283.9 — so the quant step-down
-contributes essentially nothing and the ~4x jump comes from having
-three cards instead of two. With PCIe link width also ruled out above,
-the remaining explanation is the third card itself, most consistent with
-the extra layer-split pipeline stage adding cross-card round-trip
-latency at batch-1. Note this means the Q3_K_XL/Q2_K_XL quant steps in
-this series were only ever needed to fit VRAM, not to explain speed.
+box.**
 
 ## 1-GPU leg (Q2_K_XL, one card at x16)
 
@@ -440,48 +501,48 @@ MTP draft acceptance averaged 94.6%.
 The single card runs far busier than any card in the multi-GPU legs
 (avg utilization 87.5% vs. ~50-58% per card on two cards, avg power ~150W
 vs. ~103-116W). With one card there's no second stage to wait on, so it
-computes almost continuously — the same picture as the 3-GPU→2-GPU
-comparison, one step further.
+computes almost continuously. With more cards, each card is idle more of
+the time (37–57% average utilization per card on two or three cards).
 
 ### Summary across all legs
 
 All legs: same Hermes battery, same MTP flags, standard harness
-settings, patched build. The 2-GPU rows are the x16/x16 configuration
-(the lane variants were within noise of it).
+settings, patched build, GPU clocks at ~1,328 MHz. The 2-GPU rows are the
+x16/x16 configuration (the lane variants were within noise of it).
 
 | Cards | Quant | Gen avg (t/s) | PP avg (t/s) | Avg task wall | Ok% |
 |---:|---|---:|---:|---:|---:|
-| 3 | Q4_K_XL | 20.8 | 67.3 | 243s | 96% |
+| 3 | Q4_K_XL | 85.2 | 325.8 | 70s | 93% |
 | 2 | Q4_K_XL | 85.0 | 302.8 | 83s | 93% |
 | 2 | Q3_K_XL | 82.0 | 283.9 | 72s | 89% |
 | 1 | Q2_K_XL | 76.0 | 247.7 | 98s | 89% |
 
-(The 2-GPU Q4_K_XL row comes from
-[MISCELLANEOUS-BENCHMARKS.md](MISCELLANEOUS-BENCHMARKS.md#qwen36-35b-a3b-moe-q4_k_xl-2x-p100),
-run specifically to separate quant from card count.)
+The 3-card row is the 2026-09-24 rerun; the first attempt (20.8 t/s) is
+excluded because its GPU clocks were locked — see the
+[Correction](#correction-the-first-3-gpu-run-was-clock-locked). The 2-GPU
+Q4_K_XL row comes from
+[MISCELLANEOUS-BENCHMARKS.md](MISCELLANEOUS-BENCHMARKS.md#qwen36-35b-a3b-moe-q4_k_xl-2x-p100).
 
-- **Three cards is the outlier, and it is much slower.** Every leg with
-  one or two cards lands in the 76-85 t/s generation range; only the
-  three-card leg falls to 20.8 t/s. Neither quant nor PCIe link width
-  explains it (both ruled out above), so the third card itself — most
-  consistent with the extra layer-split pipeline stage adding cross-card
-  round-trip latency at batch-1 — is the cause.
-- **One card gets ~90% of the two-card speed** (76.0 vs. 85.0 t/s
+- **Card count barely matters for single-stream speed.** Three cards and
+  two cards give the same generation speed (85.2 vs. 85.0 t/s) and
+  similar prompt processing (325.8 vs. 302.8 t/s). Layer split runs the
+  cards one after another, so extra cards don't add speed at batch 1.
+- **One card gets ~90% of the multi-card speed** (76.0 vs. 85.0 t/s
   generation, 247.7 vs. 302.8 t/s prompt processing). Part of that gap is
   the Q2_K_XL vs. Q4_K_XL quant rather than the card count (the Q4→Q3
   step alone cost ~3 t/s on two cards, so some of the 9 t/s is quant),
-  and this leg can't separate the two. Either way, for single-stream
-  use the second card buys little speed — its value is capacity: it is
-  what lets the box run higher quants like Q4_K_XL and bigger
-  context/quant combinations that don't fit on one 16GB card.
-- **Quality vs. speed**: ok% is 89-96% everywhere at 3 reps per cell,
+  and this leg can't separate the two. For single-stream use, extra
+  cards buy little speed — their value is capacity: they let the box run
+  higher quants like Q4_K_XL and bigger context/quant combinations that
+  don't fit on one 16GB card.
+- **Quality vs. speed**: ok% is 89-93% everywhere at 3 reps per cell,
   which is within the noise of the one unstable task
   (`err_hidden_search`); the series doesn't show a clear quality cost
   from dropping cards or quant levels for this workload.
-- Concurrency was not re-tested on fewer cards. The 8-way concurrency
-  sweet spot in `BENCHMARKING.md` was measured on three cards, and with
-  more parallel requests to keep several cards busy at once, the
-  three-card penalty may look different than it does at batch-1.
+- **Concurrency was not tested** on any card count. The 8-way
+  concurrency sweet spot in `BENCHMARKING.md` was measured during the
+  clock-lock problem, so it needs re-measuring. Under concurrent load,
+  extra cards may pay off in ways they can't at batch 1.
 
 ## Power draw
 
@@ -491,7 +552,7 @@ polling in each leg: the sum of every GPU's board power (as reported by
 
 | Leg | GPUs (W) | CPU package (W) | Total (W) | Peak sample (W) | Avg task wall | Energy per task |
 |---|---:|---:|---:|---:|---:|---:|
-| 3 cards, Q4_K_XL | 105 | 56 | **160** | 199 | 243s | ~39 kJ |
+| 3 cards, Q4_K_XL (rerun) | 274 | 53 | **327** | 601 | 70s | ~23 kJ |
 | 2 cards, Q4_K_XL | 219 | 51 | **270** | 437 | 83s | ~22 kJ |
 | 2 cards, Q3_K_XL (x16/x16) | 217 | 51 | **268** | 418 | 72s | ~19 kJ |
 | 1 card, Q2_K_XL | 150 | 50 | **200** | 258 | 98s | ~20 kJ |
@@ -500,8 +561,10 @@ Energy per task is average total power times average task wall time. The
 other two 2-GPU lane variants (x16/x8, x8/x8) draw 267 and 274 W — within
 about 2% of the x16/x16 figure, consistent with link width not mattering.
 
-**General numbers:** roughly **270 W** with two cards, **200 W** with
-one, and **160 W** with three, for GPUs plus CPU while the workload runs.
+**General numbers:** roughly **200 W** with one card, **270 W** with two,
+and **330 W** with three, for GPUs plus CPU while the workload runs. The
+first 3-GPU attempt's 160 W figure is excluded: its cards were clocked
+down to 405 MHz.
 
 What these numbers do and don't cover:
 
@@ -510,15 +573,18 @@ What these numbers do and don't cover:
   draw at the wall runs somewhere around 50-100 W higher than the totals
   above — that is an estimate, not a measurement; only a plug-in power
   meter would give the real figure.
-- **Three cards draws the least power but uses the most energy per
-  task**, because it is so much slower: each card averaged only ~35 W
-  (mostly waiting on the other cards), versus ~100-125 W per card on two
-  cards and ~150 W on one.
+- **Extra cards cost power without adding single-stream speed:** about
+  +70 W going from one card to two and +57 W going from two to three,
+  for the same ~85 t/s. Energy per task rises only modestly (~20 → ~22 →
+  ~23 kJ) because the tasks finish a little faster on the multi-card
+  setups. Per-card draw falls as cards are added (~150 W on one card,
+  ~100-125 W each on two, ~85-95 W each on three) because each card is
+  busy less of the time.
 - These are single-stream runs. Power under concurrent load wasn't
   measured.
-- The 3-GPU CPU average excludes 8 of 3,252 samples corrupted by a CPU
-  energy-counter wraparound in that leg's telemetry (the poller was
-  fixed for the later legs, which leave such samples blank).
+- A handful of samples per leg where the CPU energy counter wrapped
+  around are excluded from the CPU average (the poller leaves them
+  blank).
 
 ## Method notes and pitfalls
 
@@ -534,20 +600,31 @@ How each leg was run, in outline:
 3. Point the harness's model config at that server under a fresh
    model-id, and clear any stale results for that id.
 4. Start the metrics poller (2s interval: CPU power/temp/clock, per-GPU
-   power/temp/utilization, fan speed) before the battery.
+   power/temp/utilization/core and memory clocks, fan speed) before the
+   battery.
 5. Launch the battery detached, and verify exactly one eval process is
    running before walking away.
 6. When it finishes: stop the poller, take the per-task table from the
    harness's own report, pull per-request prompt/generation t/s from
    the server's own `print_timing` log lines (a manually launched server
    logs wherever its output was redirected, not to the journal), and
-   compute telemetry stats from the poller CSV.
+   compute telemetry stats from the poller CSV. **Check the GPU core clocks
+under load** (~1,328 MHz here; anything near 405 MHz means the cards are
+stuck in a low-power state).
 
-Battery wall time: ~1h48m for the 3-GPU leg, ~33-45 minutes for the
-2-GPU legs, ~48 minutes for the 1-GPU leg.
+Battery wall time: ~33-48 minutes for every valid leg (34 minutes for
+the 3-GPU rerun, 33-45 for the 2-GPU legs, ~48 for the 1-GPU leg). The
+first 3-GPU attempt took 1h48m because its cards were clock-locked.
 
 Pitfalls worth not repeating:
 
+- **Check GPU clocks before trusting any result.** A run with the cards
+  stuck at 405 MHz looked like a real finding (a ~4x "three-card
+  penalty") and drove several sections of explanation before a same-
+  state rerun showed it was an artifact. Low GPU power under load is the
+  tell.
+- A surprising result deserves a rerun in the same hardware and software
+  state before explanations are built on it.
 - `llama-bench` does not support `--spec-type`/MTP flags — MTP is a
   `llama-server`-only feature. Use the real Hermes harness, not
   `llama-bench`, for anything meant to match this methodology.
