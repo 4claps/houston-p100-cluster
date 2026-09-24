@@ -37,9 +37,9 @@ was used only to pick the split mode, not for the results below:
 | `row` | — failed to load the model — | — |
 
 Row split doesn't load this model on two 16GB cards, so layer split is
-the only working mode. For reference, the same model measured 3.07 t/s
-decode on the three-card setup in `BENCHMARKING.md` — about 4.4x slower
-than the 13.43 t/s above on two cards.
+the only working mode. (The 3.07 t/s three-card figure for this model in
+`BENCHMARKING.md` was measured while the GPU clocks were stuck low — see
+the erratum there — so it isn't comparable to the number above.)
 
 Server flags used for the battery:
 
@@ -100,8 +100,8 @@ turned out not to be needed for these tasks.
 | **TOTAL** | **93%** | **291s** |
 
 Best `err_hidden_search` result in the series (100%, versus 0-67% for
-the Qwen3.6 legs), and 93% overall — just under the 3-GPU Qwen3.6
-Q4_K_XL leg's 96%. It pays for it in wall time: 291s average versus 72s
+the Qwen3.6 legs), and 93% overall — the same as the Qwen3.6
+Q4_K_XL runs on two and three cards. It pays for it in wall time: 291s average versus 72s
 for Qwen3.6-35B-A3B Q3_K_XL on the same two cards.
 
 Both failures (`err_big_file_read` reps 1 and 2, 879s and 429s) were
@@ -155,10 +155,9 @@ no MTP, since `llama-bench` doesn't support it):
 | `layer` | 455.6 | 72.53 |
 | `row` | — failed to load the model — | — |
 
-Layer split again, and again the only mode that loads. For reference,
-the same model and quant measured 19.66 t/s decode on the three-card
-setup in `BENCHMARKING.md` — 3.7x lower than the 72.53 t/s above with
-two cards and no MTP.
+Layer split again, and again the only mode that loads. On three cards
+the same `llama-bench` check gives 70.6 t/s decode (see the three-card
+section below), about the same as the 72.53 t/s here on two cards.
 
 Server flags used for the battery (the production flags, with the
 tensor split changed for two cards):
@@ -217,26 +216,76 @@ MTP draft acceptance averaged 95.6% across those requests.
 
 ### What this run settles
 
-This is the same model and quant as the 3-GPU leg of the GPU-scaling series, on two
-cards instead of three. Same everything except the third card:
+The same model and quant on two cards and on three cards, plus the
+Q3_K_XL run from the GPU-scaling series for comparison (all at normal GPU
+clocks):
 
 | | Cards | Gen avg (t/s) | PP avg (t/s) | Avg task wall | Ok% |
 |---|---:|---:|---:|---:|---:|
-| Q4_K_XL | 3 | 20.8 | 67.3 | 243s | 96% |
-| Q4_K_XL | 2 | **85.0** | **302.8** | **83s** | 93% |
+| Q4_K_XL (rerun 2026-09-24) | 3 | **85.2** | **325.8** | **70s** | 93% |
+| Q4_K_XL | 2 | 85.0 | 302.8 | 83s | 93% |
 | Q3_K_XL (x16/x16) | 2 | 82.0 | 283.9 | 72s | 89% |
 
-- **The ~4x speedup going from three cards to two is not a quant
-  effect.** The GPU-scaling series stepped the quant down at the same
-  time as it removed a card, so the two were tangled. Q4_K_XL on two
-  cards is just as fast as Q3_K_XL on two cards (85.0 vs 82.0 t/s), so
-  the jump comes from the card count.
-- **It is not a PCIe-lane effect either**, per the x16/x16, x16/x8 and
-  x8/x8 variants in the GPU-scaling doc (all within noise of each
-  other). What's left is the third card itself — most consistent with
-  the extra layer-split pipeline stage adding cross-card round-trip
-  latency at batch-1. On this board, at least for single-stream use,
-  two P100s beat three by a wide margin.
-- Quality held up: 93% on two cards vs. 96% on three is a one-rep
-  difference (25 vs. 26 passes out of 27), all of it in the noisy
-  `err_hidden_search` task.
+- **Quant doesn't affect speed here.** Q4_K_XL on two cards is as fast
+  as Q3_K_XL on two cards (85.0 vs. 82.0 t/s).
+- **A third card adds no single-stream speed.** Three cards and two
+  cards give the same generation speed (85.2 vs. 85.0 t/s), so for
+  single-stream use the extra cards are about capacity, not speed.
+- **This replaces an earlier, wrong conclusion.** The first version of
+  this section said three cards were ~4x slower than two, based on the
+  original 3-GPU run (20.8 t/s). That run had its GPU clocks stuck at
+  405 MHz; see the Correction in [GPU-SCALING.md](GPU-SCALING.md#correction-the-first-3-gpu-run-was-clock-locked).
+- Quality is the same: 93% on both two and three cards, with the misses
+  in the noisy `err_hidden_search` task.
+
+## P2P bandwidth test and tensor split (three cards)
+
+A check on whether direct GPU-to-GPU (P2P) transfers or tensor split
+could help the multi-card setup. Run on three cards at x16/x8/x8 with the
+GPUs idle.
+
+### P2P bandwidth and latency
+
+NVIDIA's `p2pBandwidthLatencyTest` sample, built for sm_60 with CUDA 12.9
+(the sample was removed from the cuda-samples `master` branch in the v13.4
+update, so it was built from the `v12.9` tag). All pairs report
+"can access peer".
+
+| | P2P off | P2P on |
+|---|---|---|
+| One-way bandwidth between cards | 6.0–6.5 GB/s | 5.2–6.6 GB/s |
+| Two-way bandwidth between cards | 6.6–6.7 GB/s | 10.3 GB/s |
+| GPU-to-GPU latency | 10.5–18.2 µs | 1.2–1.3 µs |
+
+P2P is active: latency drops about 10x and two-way bandwidth rises about
+55%. One-way bandwidth doesn't improve (and is slightly lower for some
+pairs), and the ~6 GB/s ceiling is probably set by the x8 links. On a
+workload that moves only small activations between cards per token, a
+saving of ~10-15 microseconds is tiny next to a per-token time of ~12 ms.
+
+### Tensor split with P2P
+
+llama.cpp in this build supports `--split-mode tensor` and a
+`GGML_CUDA_P2P` switch. Production uses layer split with P2P off.
+`llama-bench` on three cards (Q4_K_XL, no MTP):
+
+| Split mode | pp512 (t/s) | tg128 (t/s) |
+|---|---:|---:|
+| `layer` (production) | 459.7 | 70.6 |
+| `tensor`, P2P on | 625.8 | crashes |
+| `tensor`, P2P off | 624.2 | crashes |
+
+Tensor split is faster for prompt processing (+36%) but **crashes during
+decode** on three cards (`GGML_ASSERT(bcj.nodes[i]) failed` in the
+multi-GPU backend), with or without P2P; with MTP enabled the server
+crashes on the first request the same way. The log also says the
+optimized all-reduce path failed to initialize (`n_devices != 2?`) and
+fell back to a slower generic path, so the P2P fast path appears to need
+exactly two GPUs. Tensor split is not usable for generation on three
+cards in this build. It has not been tried on two cards.
+
+**Build note:** linking the sample through the conda gcc's own sysroot
+stamped an `x86-64-v3` (AVX2) requirement into the binary, which the
+Sandy Bridge-E CPU can't run (`CPU ISA level is lower than required`).
+Compiling with `nvcc` and the conda gcc, then linking with the system
+`g++`, fixes it.

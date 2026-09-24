@@ -9,6 +9,38 @@ All runs below use the patched build described in
 [LLAMA-CPP-P100-ENHANCEMENTS.md](LLAMA-CPP-P100-ENHANCEMENTS.md) unless
 otherwise noted, with tensor-split evenly across all three P100s.
 
+## Erratum (2026-09-24): the absolute numbers below were very likely measured with GPU clocks stuck low
+
+Every result in this document was recorded on 2026-09-21 or 2026-09-22.
+GPU clocks weren't logged for these runs, but telemetry from the first
+3-GPU battery on 2026-09-22 shows the core clocks pinned at 405 MHz (the
+P100's idle clock, about 30% of the ~1,328 MHz it normally runs under
+load) — see the Correction in
+[GPU-SCALING.md](GPU-SCALING.md#correction-the-first-3-gpu-run-was-clock-locked).
+Re-running the first table's command on 2026-09-24 gives far higher
+numbers than recorded below, which strongly suggests these runs were made
+in the same state. The cause is unknown, and by 2026-09-23 the clocks
+were normal.
+
+What that means for the numbers below:
+
+- **Absolute throughput is far too low.** The same `llama-bench` command
+  as the first table below (Qwen3.6-35B-A3B Q4_K_XL, patched build, all
+  three cards, `-ts 1/1/1`) gives pp512 459.7 t/s and tg128 70.6 t/s
+  when re-run at normal clocks, versus 89.86 and 19.66 t/s recorded
+  below. The dense-model and concurrency figures are probably similarly
+  low but were not re-measured.
+- **The relative comparisons** (patched vs. baseline, the MTP gain, the
+  `p-min` sweep) compare runs made in the same state, so they probably
+  still hold in direction, but the percentages haven't been re-measured
+  at normal clocks.
+- **The explanation for low GPU power draw in the concurrency section is
+  very likely wrong.** The cards drew little power because they were
+  clocked down, not because single-stream decode is inherently
+  memory-bound and low-power. The concurrency "sweet spot" and the
+  PCIe/NCCL explanation for its shape should be treated as unverified
+  until re-measured.
+
 ## Patched vs. baseline: Qwen3.6-35B-A3B (MoE)
 
 Q4_K_XL quant, `-ts 1/1/1`, `-ngl 99`, flash attention on. 5 repetitions

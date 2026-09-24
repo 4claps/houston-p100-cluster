@@ -26,8 +26,11 @@ are written down somewhere durable.
 - [GPU-SCALING.md](GPU-SCALING.md) — how performance scales as the
   P100s are removed one at a time (3 → 2 → 1 cards), measured with a
   real agent workload rather than a synthetic benchmark, plus PCIe lane-
-  width tests and power draw. Headline result: for single-stream use,
-  two cards were about 4x faster than three
+  width tests and power draw. Headline results: for single-stream use,
+  one, two and three cards all generate at roughly the same speed (about
+  76-85 tokens/s on the production model), so extra cards buy VRAM, not
+  speed; PCIe lane width didn't matter; and an early result was
+  invalidated by GPU clocks stuck at idle speed
 - [MISCELLANEOUS-BENCHMARKS.md](MISCELLANEOUS-BENCHMARKS.md) — one-off
   side tests that grew out of the GPU scaling benchmarks, such as running the
   production Qwen3.6 quant on two cards and a dense Qwen3.8-27B model
