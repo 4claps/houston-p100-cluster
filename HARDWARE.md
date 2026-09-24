@@ -17,6 +17,34 @@
   NVLink on the PCIe variant of the P100, so cross-GPU tensor splits go
   over PCIe.
 
+## PCIe lanes and USB 3
+
+On this board the PCIe link widths depend on which slots are populated,
+and the choice has a side effect on the USB ports:
+
+- **Three cards** come up as **x16/x8/x8**: one P100 at its native x16,
+  the other two at x8.
+- **Two cards in the dedicated x16 slots** come up as **x16/x16**.
+- **x16/x16 uses up all of the board's PCIe lanes, which disables the
+  USB 3 ports.** USB 2 ports keep working.
+
+The link width turned out not to matter for single-stream inference
+throughput here — x16/x16, x16/x8 and x8/x8 measured within noise of each
+other (see [GPU-SCALING.md](GPU-SCALING.md)) — but the USB 3 side effect
+is easy to trip over. This build is headless with no integrated graphics
+(and the P100s have no video output), and it connects to the network
+through a USB Wi-Fi dongle. With the dongle in a USB 3 port, a two-card
+x16/x16 configuration boots with **no video and no network**, which looks
+exactly like a machine that failed to POST. **Keep the dongle on a USB 2
+port.**
+
+Seeing what a headless configuration is doing needs a display card,
+since the P100s have no video output. A GT 610 was used for this while
+diagnosing the two-card configuration; it can't be fitted alongside
+three P100s, which occupy every slot it could use. The PCIe x1 card
+described under [Display](#display) below is what was used for that
+purpose with all three installed.
+
 ## Power
 
 - **Corsair RM1000x 1000W 80+ Gold**, fully modular (refurbished unit).
