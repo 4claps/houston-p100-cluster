@@ -5,12 +5,13 @@ first. Dates are when the change merged.
 
 ## 2026-09-25
 
-- **Added** a 125 W per-card power-cap test (Qwen3.6-35B-A3B Q4_K_XL, 3
-  cards): about 3.5% slower generation, 12% slower prompt processing, 17%
-  less power and 6% less energy per task, with the hottest card ~10°C
-  cooler. The driver's throttle reason was "SW Power Cap" (~29% of busy
-  samples), with no thermal throttling.
-  See [MISCELLANEOUS-BENCHMARKS.md](MISCELLANEOUS-BENCHMARKS.md).
+- **Added** a **new baseline** to [BENCHMARKING.md](BENCHMARKING.md): the
+  agent battery on Qwen3.6-35B-A3B Q4_K_XL, 3 cards, with every card
+  power-capped at 125 W. Versus the default 250 W it is about 3.5% slower
+  in generation, 12% slower in prompt processing, and uses 17% less power
+  and 6% less energy per task, with the hottest card ~10°C cooler. The
+  driver's throttle reason was "SW Power Cap" (~29% of busy samples), with
+  no thermal throttling.
 
 ## 2026-09-24
 
