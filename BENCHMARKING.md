@@ -60,9 +60,59 @@ Per-task results: `err_python_env` 100% (65s), `err_replay_patch` 100%
 across the whole series (0-100% depending on the run at 3 reps per cell),
 so treat small differences in overall ok% as noise.
 
-Per card, by slot (average power / average temperature, max in
-parentheses): x16 (`01:00.0`) 68 W / 53.9°C (57); middle-slot x8
-(`02:00.0`) 72 W / 61.2°C (65); x8 (`03:00.0`) 78 W / 50.7°C (54).
+Per-card detail for the baseline run and the default 250 W run. The
+telemetry's per-card columns are ordered by card UUID, and are mapped to
+slots here.
+
+**Temperatures** (°C; time above a threshold as a share of the whole run):
+
+| Card (slot) | 125 W: min / avg / p95 / max | 250 W: min / avg / p95 / max |
+|---|---|---|
+| x16 (`01:00.0`) | 46 / 53.9 / 56 / 57 | 46 / 56.0 / 59 / 61 |
+| x8 (`02:00.0`, middle) | 49 / **61.2** / 64 / **65** | 52 / **69.4** / 74 / **75** |
+| x8 (`03:00.0`) | 38 / 50.7 / 53 / 54 | 39 / 52.7 / 56 / 57 |
+| CPU package | 43 / 59.8 / 63 / 66 | 45 / 59.1 / 62 / 64 |
+
+| Middle card (`02:00.0`) | 125 W | 250 W |
+|---|---:|---:|
+| Above 60°C | 78% of the run | 96% |
+| Above 65°C | 0% | 90% |
+| Above 70°C | 0% | 39% |
+| Start → end of run (avg of first / last 10 samples) | 49 → 62°C | 53 → 68°C |
+| Busy vs. idle average | 62.5 vs. 60.5°C | 71.6 vs. 68.5°C |
+
+The middle-slot card is the only one that ever approaches throttling
+temperatures, and the cap lowers its average by ~8°C and its peak by
+10°C. The other two cards move only 2-3°C. The middle card also sits only
+2-3°C cooler when idle than when busy, which suggests its position (the
+airflow around the middle slot) matters as much as the load. CPU
+temperature is unchanged.
+
+**Power** (W, per card, and the whole box):
+
+| | 125 W: min / avg / p95 / max | 250 W: min / avg / p95 / max |
+|---|---|---|
+| x16 (`01:00.0`) | 33 / 68 / 123 / 143 | 34 / 85 / 164 / 185 |
+| x8 (`02:00.0`, middle) | 36 / 72 / 122 / 145 | 37 / 95 / 176 / 199 |
+| x8 (`03:00.0`) | 31 / 78 / 125 / 140 | 31 / 94 / 172 / 190 |
+| GPUs + CPU total | avg 272, p95 354, max 431 | avg 327, p95 475, max 601 |
+
+Under the cap each card's 95th-percentile draw sits at 122-125 W, right at
+the limit, with brief transients up to ~145 W above it. Uncapped, the same
+cards reach 164-176 W at the 95th percentile and 185-199 W at the peak.
+
+**Fan** (the shroud fan, driven by the hottest card's temperature; see
+[SOFTWARE.md](SOFTWARE.md)):
+
+| | 125 W | 250 W |
+|---|---:|---:|
+| Fan speed: min / avg / p95 / max | 1,551 / 2,238 / 2,385 / 2,472 RPM | 1,724 / 2,688 / 2,928 / 3,054 RPM |
+| PWM duty: min / avg / max | 46% / 71% / 79% | 52% / 88% / 100% |
+
+The fan follows the hottest card, so the cap's lower peak temperature
+lets it run about 450 RPM slower on average, and it never reaches full
+duty (100% at 250 W, where the middle card peaks at 75°C, the top of the
+fan ramp).
 
 **Versus the default 250 W limit** (the same run without the cap, from
 [GPU-SCALING.md](GPU-SCALING.md)):
