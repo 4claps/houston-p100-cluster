@@ -3,6 +3,14 @@
 Notable changes to the benchmark results and docs in this repo, newest
 first. Dates are when the change merged.
 
+## 2026-09-26
+
+- **Added** per-card temperature, power and fan detail (including time above
+  60/65/70°C) for the 125 W baseline and the 250 W run to
+  [BENCHMARKING.md](BENCHMARKING.md). The middle-slot card is the only one that
+  approaches throttling temperatures: 61°C average and 65°C peak under the
+  cap versus 69°C and 75°C uncapped.
+
 ## 2026-09-25
 
 - **Added** a **new baseline** to [BENCHMARKING.md](BENCHMARKING.md): the
