@@ -21,8 +21,8 @@ are written down somewhere durable.
 - [LLAMA-CPP-P100-ENHANCEMENTS.md](LLAMA-CPP-P100-ENHANCEMENTS.md) — building
   llama.cpp for Pascal and the P100 performance patches
 - [BENCHMARKING.md](BENCHMARKING.md) — baseline-vs-patched throughput
-  results, MTP speculative-decoding tuning, and GPU utilization/power
-  findings
+  results, MTP speculative-decoding tuning, GPU utilization/power
+  findings, and the current 125 W-cap agent-battery baseline
 - [GPU-SCALING.md](GPU-SCALING.md) — how performance scales as the
   P100s are removed one at a time (3 → 2 → 1 cards), measured with a
   real agent workload rather than a synthetic benchmark, plus PCIe lane-
@@ -34,6 +34,8 @@ are written down somewhere durable.
   side tests that grew out of the GPU scaling benchmarks: the production
   Qwen3.6 quant on two and three cards, a dense Qwen3.8-27B model, a P2P
   and tensor-split check, and NVIDIA's Nemotron-3.5-Lightning model
+
+- [CHANGELOG.md](CHANGELOG.md) — dated list of notable result and doc changes
 
 ## Ongoing benchmarking
 

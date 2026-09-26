@@ -14,6 +14,103 @@ otherwise noted, with tensor-split evenly across all three P100s
 the GPU core clocks checked at ~1,328 MHz under load. The `llama-bench`
 runs on the MoE model use the MTP-converted GGUF (llama-bench doesn't use
 the MTP layers).
+The `llama-bench`, concurrency and MTP sections below were measured at the
+default 250 W power limit. The agent-battery **baseline** used going forward
+is measured with every card capped at 125 W (next section).
+
+## Current baseline: agent battery with a 125 W power cap
+
+This is the reference to compare future agent-battery runs against. It is
+the Hermes agent battery (9 tasks x 3 reps, standard harness settings:
+600s task cap, 8192 max tokens) on Qwen3.6-35B-A3B Q4_K_XL with MTP
+speculative decoding, all three cards (`-ts 1/1/1`, x16/x8/x8), layer
+split, server-default sampling, and **every card power-limited to 125 W**.
+Measured 2026-09-25.
+
+Server command (the production flags):
+
+```
+llama-server -m Qwen3.6-35B-A3B-MTP-UD-Q4_K_XL.gguf -ngl 99 -ts 1/1/1 -fa on -sm layer \
+  --ctx-size 65536 --cache-type-k q8_0 --cache-type-v q8_0 --parallel 1 \
+  --jinja --cache-ram 0 --no-cache-idle-slots \
+  --spec-type draft-mtp --spec-draft-n-max 3 --spec-draft-p-min 0.75
+```
+
+**Reference numbers:**
+
+| Metric | Baseline (125 W cap) |
+|---|---:|
+| Ok% (27 task-reps) | 93% |
+| Avg task wall time | 79s |
+| Battery wall time | 38.5 min |
+| Generation avg (min–max) | 82.2 (57.2–99.5) t/s |
+| Prompt processing avg (min–max) | 286.0 (24.9–570.7) t/s |
+| MTP draft acceptance | 96.1% |
+| Busy GPUs + CPU, average / peak power | 272 W / 431 W |
+| Energy per task | ~21.5 kJ |
+| GPU core clock while busy | 1,227 MHz avg (min 1,113) |
+| Hottest card, average (max) | 61.2°C (65) |
+| Throttle reasons while busy | SW Power Cap ~29%, thermal 0% |
+
+Per-task results: `err_python_env` 100% (65s), `err_replay_patch` 100%
+(99s), `err_ambiguous_edit` 100% (73s), `err_case_search` 100% (66s),
+`err_hidden_search` 33% (88s), `err_big_output` 100% (65s),
+`err_multi_dir` 100% (72s), `err_inline_script` 100% (89s),
+`err_big_file_read` 100% (93s). `err_hidden_search` is the unstable task
+across the whole series (0-100% depending on the run at 3 reps per cell),
+so treat small differences in overall ok% as noise.
+
+Per card, by slot (average power / average temperature, max in
+parentheses): x16 (`01:00.0`) 68 W / 53.9°C (57); middle-slot x8
+(`02:00.0`) 72 W / 61.2°C (65); x8 (`03:00.0`) 78 W / 50.7°C (54).
+
+**Versus the default 250 W limit** (the same run without the cap, from
+[GPU-SCALING.md](GPU-SCALING.md)):
+
+| | 250 W | 125 W cap | Change |
+|---|---:|---:|---:|
+| Ok% | 93% | 93% | same |
+| Avg task wall | 70s | 79s | +13% |
+| Generation avg (t/s) | 85.2 | 82.2 | **-3.5%** |
+| Prompt processing avg (t/s) | 325.8 | 286.0 | **-12%** |
+| MTP draft acceptance | 96.0% | 96.1% | same |
+| Busy GPUs + CPU, average power | 327 W | 272 W | **-17%** |
+| Busy GPUs + CPU, peak sample | 601 W | 431 W | -28% |
+| Energy per task | ~22.9 kJ | ~21.5 kJ | -6% |
+| Generation per watt (t/s per W) | 0.26 | 0.30 | +16% |
+| GPU core clock while busy | 1,327 MHz | 1,227 MHz | -7.5% |
+| Hottest card peak | 75°C | 65°C | -10°C |
+
+**The cap works by throttling the clock.** The driver reported "SW Power
+Cap" as the throttle reason in about 29% of busy samples (2-second
+sampling; a finer-grained view such as Grafana can show more), and thermal
+throttling was 0%. Per-card draw while busy averaged ~102 W with brief
+transients up to ~145 W over the limit. That clock reduction is the whole
+performance cost: a 50% lower power limit costs 3.5% of generation speed
+and 12% of prompt processing (compute-bound, so it takes most of the hit;
+generation is memory-bound and barely moves), while cutting average power
+17% and peak power 28%. Energy per task falls only 6% because tasks take
+13% longer; the saving is mostly in power and heat. The cooler cards also
+matter for the middle-slot card, which reached 80°C and throttled its
+clock down to 810 MHz on the sustained dense-model run.
+
+**To reproduce:**
+
+1. Cap each card: `sudo nvidia-smi -i <N> -pl 125` (125 W is the lowest
+   the P100 accepts). The limit resets on reboot.
+2. Confirm the cap after the server loads
+   (`nvidia-smi --query-gpu=index,power.limit --format=csv`) and that the
+   busy core clock is ~1,200-1,330 MHz, not near the 405 MHz idle clock.
+3. Stop the production service, launch the server with the command above,
+   and run the battery under a fresh model-id (results are cached by
+   model-id).
+4. Record throttle reasons (`clocks_throttle_reasons.sw_power_cap`,
+   `hw_thermal_slowdown`, `sw_thermal_slowdown`) alongside the usual
+   telemetry.
+
+**Caveats:** one run at 3 reps per task. Intermediate limits
+(150-200 W) weren't tested, and only Qwen3.6 was tested under the cap, not
+the dense model.
 
 ## Patched vs. baseline: Qwen3.6-35B-A3B (MoE)
 
