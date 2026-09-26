@@ -455,3 +455,60 @@ Same cards and harness, but different models and different sampling:
   (~22 kJ), mostly because the tasks take longer.
 - **Caveats:** two model families, different sampling settings, and only
   3 reps per task, so small differences shouldn't be over-read.
+
+## Power cap: 125 W per card (Qwen3.6-35B-A3B, Q4_K_XL, 3 cards)
+
+The P100's power limit defaults to 250 W, and its lowest allowed setting
+is 125 W (set per card with `sudo nvidia-smi -i <N> -pl 125`; it resets on
+reboot). This runs the same battery as the
+3-card Qwen3.6 leg in [GPU-SCALING.md](GPU-SCALING.md) — Q4_K_XL, all
+three cards (`-ts 1/1/1`), layer split, MTP on, server-default sampling,
+standard harness settings — with every card capped at 125 W. The limit
+was confirmed at 125 W on all three cards after the server loaded and
+again at the end of the run.
+
+| | 250 W (default) | 125 W cap | Change |
+|---|---:|---:|---:|
+| Ok% | 93% | 93% | same |
+| Avg task wall | 70s | 79s | +13% |
+| Battery wall time | 34 min | 38.5 min | +13% |
+| Generation avg (t/s) | 85.2 | 82.2 | **-3.5%** |
+| Prompt processing avg (t/s) | 325.8 | 286.0 | **-12%** |
+| MTP draft acceptance | 96.0% | 96.1% | same |
+| Busy GPUs + CPU, average power | 327 W | 272 W | **-17%** |
+| Busy GPUs + CPU, peak sample | 601 W | 431 W | -28% |
+| Energy per task | ~22.9 kJ | ~21.5 kJ | -6% |
+| Generation per watt (t/s per W) | 0.26 | 0.30 | +16% |
+| GPU core clock while busy | 1,327 MHz avg (min 1,189) | 1,227 MHz avg (min 1,113) | -7.5% |
+
+Per card, by slot (average power / average temperature, max in
+parentheses):
+
+| Card | 250 W | 125 W cap |
+|---|---|---|
+| x16 (`01:00.0`) | 85 W / 56.0°C (61) | 68 W / 53.9°C (57) |
+| x8 (`02:00.0`, middle slot) | 95 W / 69.4°C (75) | 72 W / 61.2°C (65) |
+| x8 (`03:00.0`) | 94 W / 52.7°C (57) | 78 W / 50.7°C (54) |
+
+**The cap works by throttling the clock.** The driver reported "SW Power
+Cap" as the throttle reason during about 29% of busy samples (2-second
+sampling; a finer-grained view such as Grafana can show more), and
+thermal throttling was 0%. Per-card draw while busy averaged ~102 W with
+brief transients up to ~145 W over the limit. That clock reduction is the
+whole performance cost.
+
+- **Small cost, big saving.** A 50% lower power limit costs 3.5% of
+  generation speed and 12% of prompt processing, yet cuts average power by
+  17% and peak power by 28%. Prompt processing is compute-bound and takes
+  most of the hit; generation is memory-bound and barely moves.
+- **Cooler.** The hottest card's peak dropped from 75°C to 65°C. That
+  matters for the middle-slot card, which reached 80°C and throttled its
+  clock down to 810 MHz on the sustained dense-model run.
+- **Energy per task falls only 6%**, because tasks take 13% longer; the
+  saving is mostly in power and heat, not in total energy.
+- **Caveats:** one run at 3 reps per task (the unstable `err_hidden_search`
+  scored 33% in both), so read the 3.5% generation difference as small
+  but real and the larger prompt-processing drop as clearer. 125 W is
+  the lowest limit the card accepts, so lower caps weren't possible;
+  intermediate values (150-200 W) weren't tested. Only Qwen3.6 was tested
+  under the cap, not the dense model.

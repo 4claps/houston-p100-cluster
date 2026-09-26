@@ -33,7 +33,9 @@ are written down somewhere durable.
 - [MISCELLANEOUS-BENCHMARKS.md](MISCELLANEOUS-BENCHMARKS.md) — one-off
   side tests that grew out of the GPU scaling benchmarks: the production
   Qwen3.6 quant on two and three cards, a dense Qwen3.8-27B model, a P2P
-  and tensor-split check, and NVIDIA's Nemotron-3.5-Lightning model
+  and tensor-split check, NVIDIA's Nemotron-3.5-Lightning model, and a 125 W per-card power-cap test
+
+- [CHANGELOG.md](CHANGELOG.md) — dated list of notable result and doc changes
 
 ## Ongoing benchmarking
 

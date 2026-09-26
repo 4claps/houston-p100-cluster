@@ -478,6 +478,9 @@ What these numbers do and don't cover:
   busy less of the time.
 - These are single-stream runs. Power under concurrent load wasn't
   measured.
+- A 125 W per-card power cap (the P100's minimum) was also tested on the
+  3-card Qwen3.6 run: about 17% less power for 3.5% slower generation.
+  See [MISCELLANEOUS-BENCHMARKS.md](MISCELLANEOUS-BENCHMARKS.md#power-cap-125-w-per-card-qwen36-35b-a3b-q4_k_xl-3-cards).
 - A handful of samples per leg where the CPU energy counter wrapped
   around are excluded from the CPU average (the poller leaves them
   blank).
