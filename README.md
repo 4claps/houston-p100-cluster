@@ -34,6 +34,10 @@ are written down somewhere durable.
   side tests that grew out of the GPU scaling benchmarks: the production
   Qwen3.6 quant on two and three cards, a dense Qwen3.8-27B model, a P2P
   and tensor-split check, and NVIDIA's Nemotron-3.5-Lightning model
+- [KMIC68-FORK-AGENT-BATTERY.md](KMIC68-FORK-AGENT-BATTERY.md) — an
+  independent P100/Pascal fork ([Kmic-68/llama.cpp](https://github.com/Kmic-68/llama.cpp))
+  evaluated in an isolated Docker environment, gated for correctness, then run
+  against the real Hermes agent battery at a 125 W power cap
 
 - [CHANGELOG.md](CHANGELOG.md) — dated list of notable result and doc changes
 
