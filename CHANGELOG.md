@@ -3,6 +3,19 @@
 Notable changes to the benchmark results and docs in this repo, newest
 first. Dates are when the change merged.
 
+## 2026-09-27
+
+- **Added** [KMIC68-FORK-AGENT-BATTERY.md](KMIC68-FORK-AGENT-BATTERY.md): an
+  independent P100/Pascal `llama.cpp` fork ([Kmic-68/llama.cpp](https://github.com/Kmic-68/llama.cpp))
+  built and gated in an isolated Docker environment (production untouched), then run
+  against the real Hermes agent battery at the documented 125 W power cap: 96% ok%
+  (27 task-reps), 188.0 t/s avg prompt processing, 45.1 t/s avg generation on the dense
+  Qwen3.8-27B model with `-sm tensor` + MTP speculative decoding. Every server flag is cited
+  directly to the fork's own `CHANGES.md`/`QUICKSTART.md` rather than borrowed from this repo's
+  unrelated 29-patches-build tuning. A side-by-side against this repo's existing Qwen3.8-27B
+  benchmark is included, with its confounds (MTP vs. none, context size, power cap) stated
+  plainly rather than treated as a controlled comparison.
+
 ## 2026-09-26
 
 - **Added** per-card temperature, power and fan detail (including time above
