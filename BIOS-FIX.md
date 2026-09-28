@@ -143,3 +143,128 @@ Region 1: Memory at ... (64-bit, prefetchable) [size=16G]
 on their own distinct 64-bit address ranges — confirming Above 4G
 Decoding is genuinely active and each 16GB BAR is fully and correctly
 mapped, not just that a checkbox got flipped somewhere.
+
+---
+
+# Adding PCIe bifurcation support
+
+A second, independent mod layered on top of the fix above: unhiding the
+BIOS menus that expose PCIe bifurcation, so the top x16 slot could be
+split x8x8 to run two GPUs off a single slot through a bifurcation riser.
+
+## The problem
+
+Like Above 4G Decoding, bifurcation control (`IOU1/IOU2/IOU3 - PCIe Port`)
+existed in the silicon and in the compiled BIOS forms, but the menu path
+to reach it — `Advanced > System Agent Configuration > IOH Configuration`
+— was hidden. Unlike Above 4G Decoding, this wasn't a functional bug being
+masked; the underlying feature already worked, it just had no UI.
+
+## Finding the real guard bytes
+
+A [community guide](https://winraid.level1techs.com/t/guide-adding-bifurcation-support-to-asus-x79-uefi-bios/33018)
+for adding bifurcation support to ASUS X79 boards describes the technique
+in general — find the `SuppressIf` block guarding the hidden menu entry
+and flip it from `True` to `False` — but its example byte patterns were
+recorded against a different board's BIOS revision (Sabertooth X79,
+BIOS 4701) and didn't literally exist in this image; the QuestionId/
+VarStoreId/FormId numbers baked into those opcodes are assigned per
+compile, not fixed by the silicon.
+
+So instead of hex-searching for the guide's literal bytes, the Setup
+module's HII form data was decompiled to text with **IFRExtractor-RS**,
+which is what actually located the real constructs in this image:
+
+```
+SuppressIf  { 0A 82 }
+    True  { 46 02 }
+    Ref Prompt: "PCI Subsystem Settings" ... FormId: 0x40E { 0F 0F AA 0A B0 0A 01 00 00 00 FF FF 00 0E 04 }
+End
+
+SuppressIf  { 0A 82 }
+    True  { 46 02 }
+    Ref Prompt: "System Agent Configuration" ... FormId: 0x41D { 0F 0F 38 08 39 08 04 00 00 00 FF FF 00 1D 04 }
+End
+```
+
+Two "System Agent Configuration" entries exist in this image: FormId
+`0x41C`, already visible, is a stripped-down copy with only PCIe
+link-speed and VT-d options; FormId `0x41D`, the one guarded above, is
+the full version and the only one containing a `Ref` to `IOH
+Configuration` — which is itself unguarded, so unhiding `0x41D` is
+sufficient to reach the bifurcation menu.
+
+## The patch
+
+Both guards are the same 2-byte opcode (`True { 46 02 }` — always
+suppress). Changing the single opcode byte `46` to `47` (`False` — never
+suppress) at each location was enough; nothing else in the image,
+including any IOU option or default, was touched:
+
+- Setup module: File GUID `899407D7-99FE-43D8-9A21-79EC328CAC21` (DXE
+  driver, `Text: Setup`) → its Tiano-compressed Freeform-subtype-GUID
+  section, subtype GUID `97E409E6-4CC1-11D9-81F6-000000000000` — this
+  holds the full HII form/string data for the whole setup menu tree.
+- Within that section's decompressed body (859,627 bytes): byte `0xC7B86`
+  (guards "PCI Subsystem Settings") and byte `0xC7BC9` (guards the full
+  "System Agent Configuration"), both `46` → `47`.
+
+The rebuild used **UEFIReplace 0.28.0** to swap that section's body
+directly, letting it handle the Tiano decompress/recompress and FFS/FV
+checksum bookkeeping:
+
+```
+UEFIReplace WORKING_p9x79pro.cap 899407D7-99FE-43D8-9A21-79EC328CAC21 18 \
+  setup_hii_patched.bin -o P9X79PRO_bifurcation.cap
+```
+
+This produced a `.cap` file the exact same size as the original
+(8,390,656 bytes) — the guide's own procedure is to remove and reinsert
+the section by hand precisely to handle cases where the size changes;
+here it didn't, and re-extracting and diffing all 197 firmware files by
+GUID between the original and patched images confirmed only the Setup
+file differed, and only in the expected way (both guards now read
+`SuppressIf False`, every IOU option/default byte-identical to stock).
+
+Flashed the same way as the Above 4G Decoding fix: **USB BIOS Flashback**,
+file renamed to `P9X79PRO.CAP`.
+
+## Verification
+
+New menu path: `Advanced > System Agent Configuration > IOH Configuration
+> IOUn - PCIe Port`. `IOU1` only offers `x4x4`/`x8` (8-lane budget); `IOU2`
+and `IOU3` both offer `x4x4x4x4`/`x4x4x8`/`x8x4x4`/`x8x8`/`x16`, defaulting
+to `x16`.
+
+Which IOU drives which physical slot isn't stated anywhere in the BIOS
+text — it's fixed by this board's trace routing. **IOU2 is confirmed to
+be the top slot** on this specific P9X79 PRO: after setting IOU2 to x8x8
+in the new menu,
+
+```
+lspci -tv
+lspci -s 00:02.0 -vvv | grep -E 'LnkCap|LnkSta'
+lspci -s 00:02.2 -vvv | grep -E 'LnkCap|LnkSta'
+```
+
+showed the IOU2 root port pair (Intel "Root Port 2a"/"2c", PCI
+`00:02.0`/`00:02.2`) split into two independent PCIe Gen3 x8 links — one
+half (`01:00.0`) already carrying a live Tesla P100 at negotiated Gen3 x8,
+the other half (port 2c, bus 02) trained and ready but still empty,
+awaiting the next GPU to be added to the riser's second slot.
+
+(IOU3's root ports, `00:03.0`/`00:03.2`, also show bifurcated x8x8 in this
+image, both halves already populated by the other two original P100s —
+pre-existing from before this mod, unrelated to the top slot.)
+
+## Rollback
+
+Same as the Above 4G Decoding fix: re-flash the known-good `.cap` via USB
+BIOS Flashback, or clear CMOS. A CMOS clear resets IOU1/2/3 back to their
+compiled defaults (x8/x16/x16) but does **not** re-hide the menu — that's
+an image-level change, not an NVRAM variable — so the x8x8 selection would
+just need to be re-set afterward.
+
+**Caveat:** this mod does not survive a stock ASUS BIOS update; it would
+need to be redone from scratch against whatever new base image ASUS
+ships.
