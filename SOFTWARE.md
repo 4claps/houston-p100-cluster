@@ -76,15 +76,33 @@ If this service is ever reinstalled from scratch on different hardware or
 after a board swap, don't assume `pwm2` still maps to the same physical
 fan header — repeat the manual cycling to confirm.
 
-## Running llama-server in production
+## Running llama-server today
+
+Production models are launched through **Docker Compose**, not directly as a systemd service.
+The Compose setup (two profiles — one per model currently in rotation — with the exact commands,
+which model file each uses, and a RUNPATH gotcha worth reading before touching the file layout)
+lives alongside the model files themselves on this box, not in this repo; see its own README for
+the how-to rather than looking for it here.
+
+One thing worth knowing if you're picking this up cold: `llama-server.service` (below) is still
+`enabled` at the systemd level even though it's no longer what launches models day to day — a
+reboot would let it auto-start and grab the GPUs out from under Compose. Whether to disable it
+outright is an open question, not yet resolved.
+
+## Running llama-server via systemd (superseded by Docker Compose, kept for reference)
+
+This section describes how production launches worked before the move to Docker Compose. It's
+kept because the SELinux/RPATH gotchas below are still real properties of this build and this
+box, even though nothing currently launches this way — useful if a bare systemd unit is ever
+needed again for some reason.
 
 The patched llama.cpp build (see
-[LLAMA-CPP-P100-ENHANCEMENTS.md](LLAMA-CPP-P100-ENHANCEMENTS.md)) runs as
+[LLAMA-CPP-P100-ENHANCEMENTS.md](LLAMA-CPP-P100-ENHANCEMENTS.md)) used to run as
 a plain systemd service — no external process manager. An earlier setup
 used `gppm` for this, mainly for its instance-supervision feature after
 its actual power-management purpose turned out not to work on this
-hardware (see [BENCHMARKING.md](BENCHMARKING.md)); it's been removed in
-favor of systemd's own supervision, which does the same job with one
+hardware (see [BENCHMARKING.md](BENCHMARKING.md)); it was removed in
+favor of systemd's own supervision, which did the same job with one
 fewer moving part.
 
 `llama-server-moe.service`:
@@ -158,3 +176,9 @@ needs to live under `/opt`; if that stops being true (e.g. after a
 different SELinux policy update), rebuilding with `-DCMAKE_INSTALL_RPATH
 '$ORIGIN'` or using `patchelf` would be the real fix rather than copying
 the whole tree.
+
+**Docker Compose sidesteps this whole problem.** A container isn't subject to the `init_t`/
+`user_home_t` SELinux interaction that forced the binary under `/opt` in the first place, so the
+Compose setup just bind-mounts the build wherever it happens to live — no `/opt` copy step, no
+SELinux relabeling. It has its own RPATH gotcha instead (an absolute, not relative, RPATH baked
+into the binary at link time), documented in the Compose setup's own README, not here.

@@ -151,9 +151,11 @@ clock down to 810 MHz on the sustained dense-model run.
 2. Confirm the cap after the server loads
    (`nvidia-smi --query-gpu=index,power.limit --format=csv`) and that the
    busy core clock is ~1,200-1,330 MHz, not near the 405 MHz idle clock.
-3. Stop the production service, launch the server with the command above,
-   and run the battery under a fresh model-id (results are cached by
-   model-id).
+3. Make sure nothing else is holding the GPUs — stop any running Docker Compose
+   profile (the current production launch path; see `SOFTWARE.md`) or the
+   old `llama-server.service` if it's somehow still active — then launch
+   the server with the command above and run the battery under a fresh
+   model-id (results are cached by model-id).
 4. Record throttle reasons (`clocks_throttle_reasons.sw_power_cap`,
    `hw_thermal_slowdown`, `sw_thermal_slowdown`) alongside the usual
    telemetry.
@@ -315,8 +317,8 @@ secondary feature: llama.cpp instance supervision (config-driven enable/disable,
 auto-restart on crash). That's a reasonable thing to want, but it's also not
 worth the extra moving part (a whole separate daemon, venv, and config format)
 just for supervision that a plain systemd unit does natively. gppm has been
-uninstalled; llama.cpp now runs directly as a systemd service (see
-[SOFTWARE.md](SOFTWARE.md)).
+uninstalled; llama.cpp ran directly as a systemd service for a while after that. Production
+launches have since moved to Docker Compose (see [SOFTWARE.md](SOFTWARE.md) for both).
 
 ## MTP speculative decoding
 

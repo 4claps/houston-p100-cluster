@@ -493,9 +493,12 @@ How each leg was run, in outline:
    link width (`nvidia-smi --query-gpu=pcie.link.width.current,...` and
    `lspci -vv` `LnkSta`). Bus addresses shift when cards are moved, so
    re-list them (`lspci | grep -i nvidia`) after any physical change.
-2. Stop the production service — it is enabled at boot and starts with
-   its original 3-GPU layout after every reboot — then launch a manual
-   `llama-server` with the leg's flags and confirm `/health`.
+2. Make sure nothing else is holding the GPUs first. Production models launch via
+   Docker Compose now (see `SOFTWARE.md`), so stop whatever profile is running there;
+   `llama-server.service` is also still enabled at the systemd level (starts with its
+   original 3-GPU layout on boot) even though it's not the current launch path, so check
+   that too if this box has rebooted recently. Then launch a manual `llama-server` with
+   the leg's flags and confirm `/health`.
 3. Point the harness's model config at that server under a fresh
    model-id, and clear any stale results for that id.
 4. Start the metrics poller (2s interval: CPU power/temp/clock, per-GPU

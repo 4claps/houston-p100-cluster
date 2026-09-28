@@ -5,6 +5,15 @@ first. Dates are when the change merged.
 
 ## 2026-09-27
 
+- **Updated** `SOFTWARE.md`, `BENCHMARKING.md`, and `GPU-SCALING.md` to reflect that
+  production models now launch via Docker Compose, not `llama-server.service` directly.
+  The old systemd how-to in `SOFTWARE.md` is kept as reference (its SELinux/RPATH
+  findings are still real), relabeled as superseded. The Compose setup itself, and its
+  own RUNPATH gotcha, live outside this repo alongside the model files — see the note in
+  `SOFTWARE.md` for where. Flagged, not fixed: `llama-server.service` is still `enabled`
+  at the systemd level, so a reboot would let it auto-start and contend with Compose for
+  the GPUs.
+
 - **Added** [KMIC68-FORK-AGENT-BATTERY.md](KMIC68-FORK-AGENT-BATTERY.md): an
   independent P100/Pascal `llama.cpp` fork ([Kmic-68/llama.cpp](https://github.com/Kmic-68/llama.cpp))
   built and gated in an isolated Docker environment (production untouched), then run
