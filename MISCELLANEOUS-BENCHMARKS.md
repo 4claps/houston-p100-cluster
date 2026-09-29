@@ -9,6 +9,9 @@ battery through a bubblewrap-sandboxed harness against a real
 [LLAMA-CPP-P100-ENHANCEMENTS.md](LLAMA-CPP-P100-ENHANCEMENTS.md)). The
 early sections ran on two cards at PCIe x16/x16; the later three-card,
 P2P and Nemotron sections ran with all three cards installed (x16/x8/x8).
+That layout has since changed (riser removed, all three cards now at PCIe Gen 3 x8 at
+`01:00.0`, `03:00.0` and `05:00.0`, 2026-09-29), so the PCI addresses below refer to
+the layout at the time; see [HARDWARE.md](HARDWARE.md).
 Where a run deviates from the standard harness settings, the deviation is
 listed explicitly.
 

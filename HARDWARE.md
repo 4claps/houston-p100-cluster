@@ -22,8 +22,14 @@
 On this board the PCIe link widths depend on which slots are populated,
 and the choice has a side effect on the USB ports:
 
-- **Three cards** come up as **x16/x8/x8**: one P100 at its native x16,
-  the other two at x8.
+- **Three cards** originally came up as **x16/x8/x8**: one P100 at its native
+  x16, the other two at x8. Since the riser was removed on 2026-09-29 (see
+  [TROUBLESHOOTING.md](TROUBLESHOOTING.md#gpu-falls-off-the-bus-xid-79-and-xid-154)),
+  all three cards sit at `01:00.0`, `03:00.0` and `05:00.0`, each running
+  PCIe Gen 3 x8. Bus IDs shift when cards move, so use `nvidia-smi -L` (index and
+  UUID) as the source of truth rather than PCI addresses. The benchmark docs
+  describe the earlier layout; see the note in
+  [BENCHMARKING.md](BENCHMARKING.md).
 - **Two cards in the dedicated x16 slots** come up as **x16/x16**.
 - **x16/x16 uses up all of the board's PCIe lanes, which disables the
   USB 3 ports.** USB 2 ports keep working.
@@ -41,7 +47,9 @@ port.**
 Seeing what a headless configuration is doing needs a display card,
 since the P100s have no video output. A GT 610 was used for this while
 diagnosing the two-card configuration; it can't be fitted alongside
-three P100s, which occupy every slot it could use. The PCIe x1 card
+three P100s, which occupy every slot it could use (it has since been
+removed; it was only ever used to test slot link width, and the 580 driver
+ignored it). The PCIe x1 card
 described under [Display](#display) below is what was used for that
 purpose with all three installed.
 
@@ -56,6 +64,13 @@ purpose with all three installed.
   EPS 8-pin at the card end. Getting this wrong (a single PCIe 8-pin
   straight into the EPS socket) is a real fire risk under sustained
   inference load, not just an out-of-spec curiosity.
+- **Running power limit: 125 W per card.** The 250W above is the P100's board
+  power and default limit; in normal use each card is capped at 125 W,
+  persistent across reboots since 2026-09-29. See "GPU power limit" in
+  [SOFTWARE.md](SOFTWARE.md).
+- **Avoid PCIe risers for the GPUs.** A card on a riser dropped off the bus
+  repeatedly, even with the riser on its own PSU power, and was stable once moved to a
+  direct slot. See [TROUBLESHOOTING.md](TROUBLESHOOTING.md#gpu-falls-off-the-bus-xid-79-and-xid-154).
 
 ## Case
 

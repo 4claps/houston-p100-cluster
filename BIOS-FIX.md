@@ -253,6 +253,11 @@ half (`01:00.0`) already carrying a live Tesla P100 at negotiated Gen3 x8,
 the other half (port 2c, bus 02) trained and ready but still empty,
 awaiting the next GPU to be added to the riser's second slot.
 
+(Later note, 2026-09-29: this riser was removed after the card on it repeatedly fell
+off the bus; the three cards now sit in direct slots at `01:00.0`, `03:00.0` and
+`05:00.0`. See [TROUBLESHOOTING.md](TROUBLESHOOTING.md#gpu-falls-off-the-bus-xid-79-and-xid-154).
+The bifurcation finding above is still accurate for the board.)
+
 (IOU3's root ports, `00:03.0`/`00:03.2`, also show bifurcated x8x8 in this
 image, both halves already populated by the other two original P100s —
 pre-existing from before this mod, unrelated to the top slot.)

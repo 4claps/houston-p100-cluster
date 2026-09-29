@@ -17,7 +17,8 @@ are written down somewhere durable.
 - [BIOS-FIX.md](BIOS-FIX.md) — the Above 4G Decoding fix: an X79-era MMIOH
   bug that hid the setting entirely, and the process used to patch and
   expose it
-- [SOFTWARE.md](SOFTWARE.md) — OS, driver, and fan control
+- [SOFTWARE.md](SOFTWARE.md) — OS, driver, fan control, and the persistent
+  125 W GPU power limit
 - [LLAMA-CPP-P100-ENHANCEMENTS.md](LLAMA-CPP-P100-ENHANCEMENTS.md) — building
   llama.cpp for Pascal and the P100 performance patches
 - [BENCHMARKING.md](BENCHMARKING.md) — baseline-vs-patched throughput
@@ -39,6 +40,8 @@ are written down somewhere durable.
   evaluated in an isolated Docker environment, gated for correctness, then run
   against the real Hermes agent battery at a 125 W power cap
 
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) — known issues and workarounds,
+  including the `-sm tensor` crash and a GPU falling off the bus (Xid 79)
 - [CHANGELOG.md](CHANGELOG.md) — dated list of notable result and doc changes
 
 ## Ongoing benchmarking
