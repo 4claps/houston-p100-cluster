@@ -76,6 +76,64 @@ If this service is ever reinstalled from scratch on different hardware or
 after a board swap, don't assume `pwm2` still maps to the same physical
 fan header — repeat the manual cycling to confirm.
 
+## GPU power limit
+
+All three P100s are power limited to **125 W** (the P100's minimum; the default is
+250 W). This is the same cap the agent-battery baseline in
+[BENCHMARKING.md](BENCHMARKING.md#current-baseline-agent-battery-with-a-125-w-power-cap)
+was measured under. It used to be applied by hand and was lost on every reboot; since
+2026-09-29 it is applied at boot by a systemd unit, and `nvidia-persistenced.service` is
+enabled so NVIDIA persistence mode is on for all three cards.
+
+`/etc/systemd/system/nvidia-power-limit.service`:
+
+```ini
+[Unit]
+Description=Set NVIDIA GPU power limit
+After=nvidia-persistenced.service
+Wants=nvidia-persistenced.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/nvidia-smi -pl 125
+
+[Install]
+WantedBy=multi-user.target
+```
+
+`ExecStart` has no `-i` flag, so the limit applies to every GPU present at boot. To set
+this up on a rebuilt box:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now nvidia-persistenced.service nvidia-power-limit.service
+```
+
+Check it with `nvidia-smi --query-gpu=index,persistence_mode,power.limit --format=csv`;
+all three should show `Enabled` and `125.00 W`.
+
+**If a card of a different model is added,** a single blanket `-pl 125` may be wrong for
+it. Run `nvidia-smi -L` first to confirm the GPU indexes (they can shift when a card is
+added), then replace the single `ExecStart` with one line per GPU:
+
+```ini
+ExecStart=/usr/bin/nvidia-smi -i 0 -pl 125
+ExecStart=/usr/bin/nvidia-smi -i 1 -pl 125
+ExecStart=/usr/bin/nvidia-smi -i 2 -pl X
+```
+
+After editing the unit: `sudo systemctl daemon-reload && sudo systemctl restart nvidia-power-limit.service`
+
+## Kernel arguments
+
+`pcie_aspm=off` was added to the kernel command line with `grubby` while
+troubleshooting the riser problem described in
+[TROUBLESHOOTING.md](TROUBLESHOOTING.md#gpu-falls-off-the-bus-xid-79-and-xid-154).
+It did not fix anything and has no effect on the P100s, which report "ASPM not
+supported". It is harmless, so it was left in place, but don't count it as part of the
+fix and don't carry it over to a rebuild expecting it to matter.
+
 ## Running llama-server today
 
 Production models are launched through **Docker Compose**, not directly as a systemd service.

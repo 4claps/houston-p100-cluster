@@ -18,6 +18,14 @@ The `llama-bench`, concurrency and MTP sections below were measured at the
 default 250 W power limit. The agent-battery **baseline** used going forward
 is measured with every card capped at 125 W (next section).
 
+**Layout note (2026-09-29):** the results in this document, and the PCI addresses
+and slot labels in them (for example the middle-slot card at `02:00.0`), were measured
+on the earlier x16/x8/x8 layout that included a riser. That riser has since been removed
+and the cards now sit at `01:00.0`, `03:00.0` and `05:00.0`, each at PCIe Gen 3 x8; see
+[HARDWARE.md](HARDWARE.md) and [TROUBLESHOOTING.md](TROUBLESHOOTING.md#gpu-falls-off-the-bus-xid-79-and-xid-154).
+The numbers are left as measured. Per-card temperatures in particular may differ on
+the new layout.
+
 ## Current baseline: agent battery with a 125 W power cap
 
 This is the reference to compare future agent-battery runs against. It is
@@ -147,7 +155,9 @@ clock down to 810 MHz on the sustained dense-model run.
 **To reproduce:**
 
 1. Cap each card: `sudo nvidia-smi -i <N> -pl 125` (125 W is the lowest
-   the P100 accepts). The limit resets on reboot.
+   the P100 accepts). This is now applied at boot by `nvidia-power-limit.service`
+   (see the "GPU power limit" section of `SOFTWARE.md`), so on this box it
+   should already be in place; the manual command is for a box without that unit.
 2. Confirm the cap after the server loads
    (`nvidia-smi --query-gpu=index,power.limit --format=csv`) and that the
    busy core clock is ~1,200-1,330 MHz, not near the 405 MHz idle clock.
@@ -288,7 +298,9 @@ under three separate conditions:
    staying resident most of the time). Same result: pstate stayed `P0`, power
    draw on the tested GPU was exactly unchanged (29.98 W → 29.98 W).
 3. **Persistence mode on vs. off.** No measurable difference either way (~30W
-   regardless).
+   regardless). (Persistence mode is now enabled on all three cards via
+   `nvidia-persistenced.service`, as part of the persistent 125 W power limit in
+   `SOFTWARE.md`; this finding is about idle power only.)
 
 Beyond the pstate call itself, two further checks ruled out any other lever:
 

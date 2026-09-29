@@ -3,6 +3,29 @@
 Notable changes to the benchmark results and docs in this repo, newest
 first. Dates are when the change merged.
 
+## 2026-09-29
+
+- **Changed** the GPU power limit from a manual setting that was lost on every reboot
+  to a persistent one: all three Tesla P100s are now capped at 125 W (down from the
+  250 W default) by a new `nvidia-power-limit.service` systemd unit that runs at boot,
+  and `nvidia-persistenced.service` is enabled so persistence mode is on for every
+  card. The unit contents, enable steps and what to change if a different card model
+  is added are in the new "GPU power limit" section of [SOFTWARE.md](SOFTWARE.md).
+- **Changed** the hardware layout and documented the riser failure that caused it.
+  One P100 on a riser at `02:00.0` repeatedly fell off the bus (Xid 79, then Xid 154)
+  about 7 minutes after boot, once with a kernel panic in the `nvidia` module. The riser
+  was removed and the card moved to a direct slot, and it has been stable under load
+  since. The GT 610 test card was also removed. The three cards now sit at `01:00.0`,
+  `03:00.0` and `05:00.0`, each at PCIe Gen 3 x8. See the new Xid 79 section in
+  [TROUBLESHOOTING.md](TROUBLESHOOTING.md), the updated PCIe section of
+  [HARDWARE.md](HARDWARE.md), and the note on `pcie_aspm=off` in
+  [SOFTWARE.md](SOFTWARE.md).
+- **Noted** that the benchmark results in [BENCHMARKING.md](BENCHMARKING.md),
+  [GPU-SCALING.md](GPU-SCALING.md) and [MISCELLANEOUS-BENCHMARKS.md](MISCELLANEOUS-BENCHMARKS.md)
+  were measured on the earlier layout (x16/x8/x8, with a card at `02:00.0`) and, for
+  most of them, before the 125 W limit was persistent. Their numbers and PCI addresses are
+  unchanged.
+
 ## 2026-09-27
 
 - **Updated** `SOFTWARE.md`, `BENCHMARKING.md`, and `GPU-SCALING.md` to reflect that

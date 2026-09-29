@@ -550,6 +550,11 @@ Pitfalls worth not repeating:
   (e.g. a `while pgrep -f X; do ...` loop matches itself forever).
   Match on a PID captured at launch, or use the `[x]pattern` bracket
   trick, instead.
+- The physical layout changed on 2026-09-29: a riser that kept dropping a card off
+  the bus (Xid 79) was removed, and the three cards now sit at `01:00.0`, `03:00.0`
+  and `05:00.0`, each at PCIe Gen 3 x8. Every PCI address and slot label in this
+  document refers to the layout at the time of each run. See
+  [TROUBLESHOOTING.md](TROUBLESHOOTING.md#gpu-falls-off-the-bus-xid-79-and-xid-154).
 - On this board, populating the two x16 slots for full x16/x16 **disables
   the USB 3 ports** (USB 2 still works). On a headless machine with no
   integrated graphics that uses a USB Wi-Fi dongle, a dongle left in a
