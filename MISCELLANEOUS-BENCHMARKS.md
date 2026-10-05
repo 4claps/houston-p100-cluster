@@ -1,5 +1,11 @@
 # Miscellaneous benchmarks
 
+> **Note (2026-10-05):** where this document says "production" it means the setup at the time of
+> writing: Qwen3.6-35B-A3B on the patched llama.cpp build described in
+> [LLAMA-CPP-P100-ENHANCEMENTS.md](LLAMA-CPP-P100-ENHANCEMENTS.md), run directly on the host. Production
+> now runs in Docker on the Kmic-68 fork with a different model and settings; see "Production today" in
+> [README.md](README.md). The results below are left as measured.
+
 One-off side tests that don't belong in the main GPU-scaling series
 ([GPU-SCALING.md](GPU-SCALING.md)) or the llama-bench-level numbers in
 [BENCHMARKING.md](BENCHMARKING.md). Everything here runs the same real

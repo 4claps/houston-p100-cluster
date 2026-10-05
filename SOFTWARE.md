@@ -76,14 +76,42 @@ If this service is ever reinstalled from scratch on different hardware or
 after a board swap, don't assume `pwm2` still maps to the same physical
 fan header — repeat the manual cycling to confirm.
 
+**Current state (2026-10-05):** the temperature-driven service above is installed and
+enabled but is not the one running. Since 2026-10-03 the fans have been held at full
+speed by a second unit, `fans-full.service` ("Force all case fans to full speed",
+running `/usr/local/bin/fans-full.sh`), which was started by hand for a long benchmark
+run and left on. With it the shroud fan reads about 2,850-3,050 RPM. `fans-full.service`
+is **not** enabled at boot, so after a reboot `gpu-fan-control.service` takes over
+again, now with the cards at a 150 W limit (next section). At full fan speed the cards
+sat at 34-39°C idle with a model loaded and peaked at 65-68°C during sustained prompt
+processing at 150 W.
+
 ## GPU power limit
 
-All three P100s are power limited to **125 W** (the P100's minimum; the default is
-250 W). This is the same cap the agent-battery baseline in
+All three P100s are power limited to **150 W** (the P100's minimum is 125 W; the
+default is 250 W). The limit was 125 W until 2026-10-05; that is the cap the
+agent-battery baseline in
 [BENCHMARKING.md](BENCHMARKING.md#current-baseline-agent-battery-with-a-125-w-power-cap)
 was measured under. It used to be applied by hand and was lost on every reboot; since
 2026-09-29 it is applied at boot by a systemd unit, and `nvidia-persistenced.service` is
 enabled so NVIDIA persistence mode is on for all three cards.
+
+Why 150 W: a sweep on the current production stack (Qwen3.8-27B on the Kmic-68 fork,
+tensor split, NCCL) found the 125 W cap was limiting throughput, with the driver's
+power-cap reason active in up to 80% of busy samples during generation.
+
+| Cap | Generation (tg512) | Prompt processing (pp2048) | GPU power while generating, 3 cards | Hottest card |
+|---|---|---|---|---|
+| 125 W | 31.25 t/s | 506.0 t/s | 356 W | 54°C |
+| 150 W | 33.29 t/s (+6.5%) | 530.4 t/s (+4.8%) | 430 W | 58°C |
+| 175 W | 33.66 t/s (+7.7%) | 549.0 t/s (+8.5%) | 484 W | 60°C |
+
+150 W takes most of the generation gain; 175 W adds almost nothing to generation for
+another 54 W. Generation per GPU watt is 12% lower at 150 W than at 125 W. Peak draw of
+the three cards plus the CPU package was about 500 W at 150 W. Instantaneous per-card
+peaks at the 150 W cap reached 169-177 W in later use; the cap is an average, not a
+hard ceiling. Full method and data: section 1.11 of the
+[3-GPU measurements](3gpu-optimization/RESULTS.md).
 
 `/etc/systemd/system/nvidia-power-limit.service`:
 
@@ -96,7 +124,7 @@ Wants=nvidia-persistenced.service
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/bin/nvidia-smi -pl 125
+ExecStart=/usr/bin/nvidia-smi -pl 150
 
 [Install]
 WantedBy=multi-user.target
@@ -111,15 +139,15 @@ sudo systemctl enable --now nvidia-persistenced.service nvidia-power-limit.servi
 ```
 
 Check it with `nvidia-smi --query-gpu=index,persistence_mode,power.limit --format=csv`;
-all three should show `Enabled` and `125.00 W`.
+all three should show `Enabled` and `150.00 W`.
 
-**If a card of a different model is added,** a single blanket `-pl 125` may be wrong for
+**If a card of a different model is added,** a single blanket `-pl 150` may be wrong for
 it. Run `nvidia-smi -L` first to confirm the GPU indexes (they can shift when a card is
 added), then replace the single `ExecStart` with one line per GPU:
 
 ```ini
-ExecStart=/usr/bin/nvidia-smi -i 0 -pl 125
-ExecStart=/usr/bin/nvidia-smi -i 1 -pl 125
+ExecStart=/usr/bin/nvidia-smi -i 0 -pl 150
+ExecStart=/usr/bin/nvidia-smi -i 1 -pl 150
 ExecStart=/usr/bin/nvidia-smi -i 2 -pl X
 ```
 
@@ -142,10 +170,51 @@ which model file each uses, and a RUNPATH gotcha worth reading before touching t
 lives alongside the model files themselves on this box, not in this repo; see its own README for
 the how-to rather than looking for it here.
 
-One thing worth knowing if you're picking this up cold: `llama-server.service` (below) is still
-`enabled` at the systemd level even though it's no longer what launches models day to day — a
-reboot would let it auto-start and grab the GPUs out from under Compose. Whether to disable it
-outright is an open question, not yet resolved.
+`llama-server.service` (below) used to be left `enabled` at the systemd level, which meant a
+reboot could let it auto-start and grab the GPUs out from under Compose. As of 2026-10-05 it is
+**masked**, so it can no longer start.
+
+### What production runs now (2026-10-05)
+
+The Compose profile in use serves **Qwen3.8-27B, unsloth `UD-Q6_K_XL`**, on the
+[Kmic-68 fork](https://github.com/Kmic-68/llama.cpp) at `ae35056eb`, built with NCCL
+(`-DGGML_CUDA_NCCL=ON`), inside the fork's Docker image:
+
+```
+environment: GGML_CUDA_P2P=1  GGML_CUDA_GRAPHS_PRE_VOLTA=3  NCCL_P2P_LEVEL=SYS
+             LLAMA_SPEC_SAMPLE_TEMP=1.0  LLAMA_SPEC_DRAFT_TOPK=20
+llama-server -m Qwen3.8-27B-UD-Q6_K_XL.gguf --jinja --cache-ram 0 --no-cache-idle-slots
+    --parallel 1 -c 262144 -ngl 99 -sm tensor -ts 1/1/1 -fa 1 -ctk q4_0 -ctv q4_0
+    -b 2048 -ub 2048 -lm none -fit off
+    --spec-type draft-mtp --spec-draft-n-max 3 --spec-draft-p-min 0.0
+    -ngld 99 -ubd 64 -ctkd q4_0 -ctvd q4_0
+    --temp 1.0 --top-k 20 --top-p 0.95 --min-p 0.0
+```
+
+Why each setting differs from the fork's reference command (measured on this box; the
+numbers and method are in the [3-GPU measurements](3gpu-optimization/),
+submitted to the fork as [PR #2](https://github.com/Kmic-68/llama.cpp/pull/2)):
+
+| Setting | Why |
+|---|---|
+| NCCL build with `NCCL_P2P_LEVEL=SYS` | Prompt processing 276 → 500 t/s at depth 0 and 211 → 316 t/s on a 129,000-token prompt; generation 29.8 → 31.2 t/s. Without `NCCL_P2P_LEVEL=SYS`, NCCL picks a host-memory transport on this board. Output is repeatable but not bit-identical to the non-NCCL build. |
+| `-lm none` | This box has 16 GB of RAM for a 23.5 GiB model; with the default mmap loading, generation was 11% slower and noisy, and loading took about twice as long. |
+| `-fit off` | Keeps the explicit `-ts 1/1/1` layout; used in every measurement. |
+| MTP `n-max 3`, `p-min 0.0` | Fastest setting under both greedy and sampled decoding on this model (the fork's reference is 4 and 0.2). |
+| `-b 2048` (was 32768) | The server acts on a dropped request only between decode calls, and `-b` sets how many prompt tokens go into one call. A request dropped mid-way through a 64,000-token prompt held the slot for 72-74 s at `-b 32768` and about 4 s at `-b 2048`, for 0.3% of prompt-processing speed. |
+| `-c 262144` | Fits with about 5 GB free per card (11.1 GB peak with a 129,000-token prompt). |
+| 150 W cap | See "GPU power limit" above. |
+
+Two things to know when operating it:
+
+- **Do not poll `/slots` quickly.** With another client requesting `/slots` five times a
+  second, the server did not notice a dropped request until its prompt had finished
+  processing (about 80 s), at any `-b`. `/health` every 5 s had no such effect.
+- **One slot.** `-np 2` works with this stack but a second client still waits for a long
+  prompt to finish, and it costs 0.7-1.2 GB more per card.
+
+On these settings a 64,000-token prompt processes at about 405 t/s and replies generate at
+37-50 t/s with MTP.
 
 ## Running llama-server via systemd (superseded by Docker Compose, kept for reference)
 

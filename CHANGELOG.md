@@ -3,6 +3,36 @@
 Notable changes to the benchmark results and docs in this repo, newest
 first. Dates are when the change merged.
 
+## 2026-10-05
+
+- **Changed** the GPU power limit from 125 W to 150 W per card
+  (`nvidia-power-limit.service` now runs `nvidia-smi -pl 150`). A sweep on the current
+  production stack showed the 125 W cap was limiting throughput: 150 W gives +6.5%
+  generation and +4.8% prompt processing, and 175 W adds little more to generation. Table
+  and reasoning in the "GPU power limit" section of [SOFTWARE.md](SOFTWARE.md);
+  [HARDWARE.md](HARDWARE.md) updated to match.
+- **Added** "What production runs now" to [SOFTWARE.md](SOFTWARE.md): Qwen3.8-27B
+  `UD-Q6_K_XL` on the Kmic-68 fork with an NCCL build (`NCCL_P2P_LEVEL=SYS`), `-lm none`,
+  `-fit off`, `-c 262144`, MTP `n-max 3` / `p-min 0.0` and `-b 2048`, with the measured
+  reason for each setting and two operating notes (do not poll `/slots` quickly; one slot).
+- **Added** [3gpu-optimization/](3gpu-optimization/): the 3-GPU optimization work on the
+  Kmic-68 fork in one folder (summary, results, method, limitations, plan, derived data and
+  scripts). The measurements were also submitted to the fork as
+  [PR #2](https://github.com/Kmic-68/llama.cpp/pull/2).
+- **Added** a "Production today" section to [README.md](README.md): models are now served
+  from Docker, not a bare-metal systemd service, with the current configuration and speeds.
+  [BENCHMARKING.md](BENCHMARKING.md), [GPU-SCALING.md](GPU-SCALING.md),
+  [MISCELLANEOUS-BENCHMARKS.md](MISCELLANEOUS-BENCHMARKS.md) and
+  [LLAMA-CPP-P100-ENHANCEMENTS.md](LLAMA-CPP-P100-ENHANCEMENTS.md) each carry a note that
+  "production" in them means the earlier bare-metal setup.
+- **Noted** in [SOFTWARE.md](SOFTWARE.md) that the fans are currently held at full speed by
+  `fans-full.service`, with `gpu-fan-control.service` enabled but not running, and that
+  `llama-server.service` is now masked ([GPU-SCALING.md](GPU-SCALING.md) updated to match).
+- **Noted** at the top of [KMIC68-FORK-AGENT-BATTERY.md](KMIC68-FORK-AGENT-BATTERY.md) that
+  it describes the fork as first evaluated (125 W, no NCCL, MTP 4 / 0.2, `-b 32768`), and in
+  the baseline section of [BENCHMARKING.md](BENCHMARKING.md) that the 125 W baseline is the
+  earlier model and build. Their numbers are unchanged.
+
 ## 2026-09-29
 
 - **Changed** the GPU power limit from a manual setting that was lost on every reboot
