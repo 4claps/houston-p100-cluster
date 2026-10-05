@@ -64,9 +64,10 @@ purpose with all three installed.
   EPS 8-pin at the card end. Getting this wrong (a single PCIe 8-pin
   straight into the EPS socket) is a real fire risk under sustained
   inference load, not just an out-of-spec curiosity.
-- **Running power limit: 125 W per card.** The 250W above is the P100's board
-  power and default limit; in normal use each card is capped at 125 W,
-  persistent across reboots since 2026-09-29. See "GPU power limit" in
+- **Running power limit: 150 W per card** (125 W until 2026-10-05). The 250W above is
+  the P100's board power and default limit; in normal use each card is capped at 150 W,
+  persistent across reboots since 2026-09-29. At that cap single cards peaked at
+  169-177 W for moments, which is why the two-lead wiring above matters. See "GPU power limit" in
   [SOFTWARE.md](SOFTWARE.md).
 - **Avoid PCIe risers for the GPUs.** A card on a riser dropped off the bus
   repeatedly, even with the riser on its own PSU power, and was stable once moved to a

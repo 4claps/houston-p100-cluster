@@ -2,6 +2,12 @@
 
 Last updated 2026-09-27.
 
+**Update 2026-10-05:** this document records the evaluation as it was run on 2026-09-27 and is
+left unchanged below. Production has since moved to this fork with different settings: an NCCL
+build (`NCCL_P2P_LEVEL=SYS`), `-lm none -fit off`, MTP `n-max 3` / `p-min 0.0`, `-b 2048`, and a
+150 W cap. See "What production runs now" in [SOFTWARE.md](SOFTWARE.md) and the
+[3-GPU measurements](3gpu-optimization/).
+
 Evaluation of [Kmic-68's `llama.cpp` fork](https://github.com/Kmic-68/llama.cpp) (`p100-optimizations`
 branch) — a separate, independent set of Pascal/P100 CUDA-kernel optimizations from the
 29-patches build this repo otherwise documents. Credit for the fork and its tuning work is

@@ -1,5 +1,11 @@
 # GPU scaling benchmarks
 
+> **Note (2026-10-05):** where this document says "production" it means the setup at the time of
+> writing: Qwen3.6-35B-A3B on the patched llama.cpp build described in
+> [LLAMA-CPP-P100-ENHANCEMENTS.md](LLAMA-CPP-P100-ENHANCEMENTS.md), run directly on the host. Production
+> now runs in Docker on the Kmic-68 fork with a different model and settings; see "Production today" in
+> [README.md](README.md). The results below are left as measured.
+
 Real-hardware, real-workload benchmarking of this box as its P100s are
 physically removed one at a time: the actual 9-task x 3-rep Hermes agent
 battery, run through a bubblewrap-sandboxed harness against a real
@@ -495,9 +501,8 @@ How each leg was run, in outline:
    re-list them (`lspci | grep -i nvidia`) after any physical change.
 2. Make sure nothing else is holding the GPUs first. Production models launch via
    Docker Compose now (see `SOFTWARE.md`), so stop whatever profile is running there;
-   `llama-server.service` is also still enabled at the systemd level (starts with its
-   original 3-GPU layout on boot) even though it's not the current launch path, so check
-   that too if this box has rebooted recently. Then launch a manual `llama-server` with
+   `llama-server.service` was still enabled at the systemd level when this was written;
+   it is now masked (checked 2026-10-05), so it no longer needs checking. Then launch a manual `llama-server` with
    the leg's flags and confirm `/health`.
 3. Point the harness's model config at that server under a fresh
    model-id, and clear any stale results for that id.

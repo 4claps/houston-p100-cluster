@@ -1,5 +1,11 @@
 # Benchmarking
 
+> **Note (2026-10-05):** where this document says "production" it means the setup at the time of
+> writing: Qwen3.6-35B-A3B on the patched llama.cpp build described in
+> [LLAMA-CPP-P100-ENHANCEMENTS.md](LLAMA-CPP-P100-ENHANCEMENTS.md), run directly on the host. Production
+> now runs in Docker on the Kmic-68 fork with a different model and settings; see "Production today" in
+> [README.md](README.md). The results below are left as measured.
+
 Benchmark results for this box, kept separate from
 [LLAMA-CPP-P100-ENHANCEMENTS.md](LLAMA-CPP-P100-ENHANCEMENTS.md) (which
 covers the build/patch process itself) so new runs have an obvious place
@@ -27,6 +33,12 @@ The numbers are left as measured. Per-card temperatures in particular may differ
 the new layout.
 
 ## Current baseline: agent battery with a 125 W power cap
+
+**Update 2026-10-05:** this section is still the baseline for comparing agent-battery runs,
+but it no longer describes what production runs. The cards are now capped at 150 W and
+production serves Qwen3.8-27B on the Kmic-68 fork; see [SOFTWARE.md](SOFTWARE.md). An agent
+battery on that stack is in section 1.9 of the
+[3-GPU measurements](3gpu-optimization/RESULTS.md).
 
 This is the reference to compare future agent-battery runs against. It is
 the Hermes agent battery (9 tasks x 3 reps, standard harness settings:
@@ -394,5 +406,5 @@ always verifies drafted tokens against the full model before accepting
 them, so every configuration produces identical output for a given
 prompt and seed; only throughput differs.
 
-Production runs `--spec-draft-n-max 3 --spec-draft-p-min 0.75` (see
+Production at the time ran `--spec-draft-n-max 3 --spec-draft-p-min 0.75` (see
 [SOFTWARE.md](SOFTWARE.md)).

@@ -1,5 +1,9 @@
 # Building and validating llama.cpp for Pascal
 
+> **Note (2026-10-05):** this build is no longer what serves models. Production now runs in Docker on
+> the Kmic-68 fork; see "Production today" in [README.md](README.md). This document is kept as the record
+> of the host build and its patches.
+
 This covers getting llama.cpp actually running well on these three P100s:
 the CUDA toolchain problems that stood in the way of a working build, the
 Pascal-specific performance patches applied on top, and the tests run to
