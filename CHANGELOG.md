@@ -15,6 +15,8 @@ first. Dates are when the change merged.
   the fan-control note in [SOFTWARE.md](SOFTWARE.md), and the GPU entry in
   [HARDWARE.md](HARDWARE.md) for four cards. The fans are back on the temperature-driven
   service; `--metrics` is now on the server command.
+- **Changed** the production Compose service to `restart: unless-stopped`, so it starts
+  again after a reboot if it was running before. Noted in [SOFTWARE.md](SOFTWARE.md).
 
 ## 2026-10-05
 

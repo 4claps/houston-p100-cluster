@@ -217,6 +217,11 @@ Two things to know when operating it:
 - **`--metrics` is on.** Scraping `/metrics` faster than about once a second may have the
   same effect as fast `/slots` polling; that has not been tested.
 
+- **Comes back after a reboot.** The service has `restart: unless-stopped`, so Docker starts
+  it again at boot if it was running when the machine went down. If it was stopped by hand
+  (`docker compose stop`), it stays stopped. Set on 2026-10-06 after a reboot left production
+  down; the auto-start itself has not been tested with a reboot.
+
 On these settings a 64,000-token prompt processes at about 514 t/s and replies generate at
 42-56 t/s with MTP. Peak draw of the four cards was about 650 W, roughly 710 W with the CPU,
 on the 1000 W supply.
