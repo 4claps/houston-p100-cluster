@@ -76,15 +76,15 @@ If this service is ever reinstalled from scratch on different hardware or
 after a board swap, don't assume `pwm2` still maps to the same physical
 fan header — repeat the manual cycling to confirm.
 
-**Current state (2026-10-05):** the temperature-driven service above is installed and
-enabled but is not the one running. Since 2026-10-03 the fans have been held at full
-speed by a second unit, `fans-full.service` ("Force all case fans to full speed",
-running `/usr/local/bin/fans-full.sh`), which was started by hand for a long benchmark
-run and left on. With it the shroud fan reads about 2,850-3,050 RPM. `fans-full.service`
-is **not** enabled at boot, so after a reboot `gpu-fan-control.service` takes over
-again, now with the cards at a 150 W limit (next section). At full fan speed the cards
-sat at 34-39°C idle with a model loaded and peaked at 65-68°C during sustained prompt
-processing at 150 W.
+**Current state (2026-10-06):** the temperature-driven service above is the one running.
+A second unit, `fans-full.service` ("Force all case fans to full speed", running
+`/usr/local/bin/fans-full.sh`), exists for benchmark runs: it was in use from 2026-10-03
+to 2026-10-06 and for the four-card test, and holds the shroud fan at about
+2,850-3,050 RPM. It is not enabled at boot. Only one of the two should run at a time
+(stop one, start the other). The measurements in `3gpu-optimization/` were taken with
+the fans at full; at full speed the cards sat at 34-39°C idle with a model loaded and
+peaked at 65-68°C during sustained prompt processing at 150 W. Temperatures under the
+temperature-driven service at 150 W on four cards have not been measured.
 
 ## GPU power limit
 
@@ -174,7 +174,7 @@ the how-to rather than looking for it here.
 reboot could let it auto-start and grab the GPUs out from under Compose. As of 2026-10-05 it is
 **masked**, so it can no longer start.
 
-### What production runs now (2026-10-05)
+### What production runs now (2026-10-06)
 
 The Compose profile in use serves **Qwen3.8-27B, unsloth `UD-Q6_K_XL`**, on the
 [Kmic-68 fork](https://github.com/Kmic-68/llama.cpp) at `ae35056eb`, built with NCCL
@@ -184,11 +184,11 @@ The Compose profile in use serves **Qwen3.8-27B, unsloth `UD-Q6_K_XL`**, on the
 environment: GGML_CUDA_P2P=1  GGML_CUDA_GRAPHS_PRE_VOLTA=3  NCCL_P2P_LEVEL=SYS
              LLAMA_SPEC_SAMPLE_TEMP=1.0  LLAMA_SPEC_DRAFT_TOPK=20
 llama-server -m Qwen3.8-27B-UD-Q6_K_XL.gguf --jinja --cache-ram 0 --no-cache-idle-slots
-    --parallel 1 -c 262144 -ngl 99 -sm tensor -ts 1/1/1 -fa 1 -ctk q4_0 -ctv q4_0
+    --parallel 1 -c 262144 -ngl 99 -sm tensor -ts 1/1/1/1 -fa 1 -ctk q4_0 -ctv q4_0
     -b 2048 -ub 2048 -lm none -fit off
     --spec-type draft-mtp --spec-draft-n-max 3 --spec-draft-p-min 0.0
     -ngld 99 -ubd 64 -ctkd q4_0 -ctvd q4_0
-    --temp 1.0 --top-k 20 --top-p 0.95 --min-p 0.0
+    --temp 1.0 --top-k 20 --top-p 0.95 --min-p 0.0 --metrics
 ```
 
 Why each setting differs from the fork's reference command (measured on this box; the
@@ -199,7 +199,8 @@ submitted to the fork as [PR #2](https://github.com/Kmic-68/llama.cpp/pull/2)):
 |---|---|
 | NCCL build with `NCCL_P2P_LEVEL=SYS` | Prompt processing 276 → 500 t/s at depth 0 and 211 → 316 t/s on a 129,000-token prompt; generation 29.8 → 31.2 t/s. Without `NCCL_P2P_LEVEL=SYS`, NCCL picks a host-memory transport on this board. Output is repeatable but not bit-identical to the non-NCCL build. |
 | `-lm none` | This box has 16 GB of RAM for a 23.5 GiB model; with the default mmap loading, generation was 11% slower and noisy, and loading took about twice as long. |
-| `-fit off` | Keeps the explicit `-ts 1/1/1` layout; used in every measurement. |
+| `-ts 1/1/1/1` (four cards, since 2026-10-06) | Against three cards on the same day: a 64,000-token prompt 389 → 514 t/s, generation with MTP 37.4 → 42.1 t/s, and 8.5 GB per card instead of about 11. Output differs from three cards by about as much as turning NCCL on does, and two four-card runs were byte-identical. See [FOUR-CARDS.md](3gpu-optimization/FOUR-CARDS.md). |
+| `-fit off` | Keeps the explicit `-ts` layout; used in every measurement. |
 | MTP `n-max 3`, `p-min 0.0` | Fastest setting under both greedy and sampled decoding on this model (the fork's reference is 4 and 0.2). |
 | `-b 2048` (was 32768) | The server acts on a dropped request only between decode calls, and `-b` sets how many prompt tokens go into one call. A request dropped mid-way through a 64,000-token prompt held the slot for 72-74 s at `-b 32768` and about 4 s at `-b 2048`, for 0.3% of prompt-processing speed. |
 | `-c 262144` | Fits with about 5 GB free per card (11.1 GB peak with a 129,000-token prompt). |
@@ -213,8 +214,12 @@ Two things to know when operating it:
 - **One slot.** `-np 2` works with this stack but a second client still waits for a long
   prompt to finish, and it costs 0.7-1.2 GB more per card.
 
-On these settings a 64,000-token prompt processes at about 405 t/s and replies generate at
-37-50 t/s with MTP.
+- **`--metrics` is on.** Scraping `/metrics` faster than about once a second may have the
+  same effect as fast `/slots` polling; that has not been tested.
+
+On these settings a 64,000-token prompt processes at about 514 t/s and replies generate at
+42-56 t/s with MTP. Peak draw of the four cards was about 650 W, roughly 710 W with the CPU,
+on the 1000 W supply.
 
 ## Running llama-server via systemd (superseded by Docker Compose, kept for reference)
 

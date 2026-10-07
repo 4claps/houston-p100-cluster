@@ -12,8 +12,11 @@
 
 ## GPUs
 
-- **3x NVIDIA Tesla P100 PCIe 16GB** (Pascal, GP100GL), 48GB total VRAM.
-  This is three separate 16GB pools, not a unified 48GB space — there's no
+- **4x NVIDIA Tesla P100 PCIe 16GB** (Pascal, GP100GL), 64GB total VRAM. The build ran
+  three cards (48GB) until a fourth was added on 2026-10-06; most documents here describe
+  the three-card machine. With four installed they sit at `01:00.0`, `03:00.0`, `04:00.0`
+  and `05:00.0`, each at PCIe Gen 3 x8, all behind one host bridge.
+  These are separate 16GB pools, not a unified space — there's no
   NVLink on the PCIe variant of the P100, so cross-GPU tensor splits go
   over PCIe.
 

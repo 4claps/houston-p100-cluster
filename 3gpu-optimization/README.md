@@ -1,5 +1,8 @@
 # 3x Tesla P100: measurement data
 
+> **Update 2026-10-06:** a fourth card has since been added and production runs on four. See
+> [FOUR-CARDS.md](FOUR-CARDS.md). Everything below describes the three-card machine.
+
 Measurements of this fork at tag `p100-optimizations-b11515-ae35056` (`ae35056eb`) on **three** Tesla P100 cards
 under `-sm tensor`. The fork's own documents cover two cards; this directory adds data for a three-card machine. It
 contains measurements and the scripts that produced them. It changes no source, kernel or build file.

@@ -3,6 +3,19 @@
 Notable changes to the benchmark results and docs in this repo, newest
 first. Dates are when the change merged.
 
+## 2026-10-06
+
+- **Added** a fourth Tesla P100 and moved production to four cards (`-ts 1/1/1/1`). Measured
+  on the production configuration against three cards the same day: a 64,000-token prompt
+  389 → 514 t/s (+32%), generation with MTP 37.4 → 42.1 t/s (+13%), 8.5 GB per card instead
+  of about 11. The agent battery on the four-card service passed 26 of 27 tasks at 120 s
+  mean task time. Full results in
+  [3gpu-optimization/FOUR-CARDS.md](3gpu-optimization/FOUR-CARDS.md).
+- **Updated** "Production today" in [README.md](README.md), "What production runs now" and
+  the fan-control note in [SOFTWARE.md](SOFTWARE.md), and the GPU entry in
+  [HARDWARE.md](HARDWARE.md) for four cards. The fans are back on the temperature-driven
+  service; `--metrics` is now on the server command.
+
 ## 2026-10-05
 
 - **Changed** the GPU power limit from 125 W to 150 W per card

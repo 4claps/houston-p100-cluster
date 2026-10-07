@@ -1,22 +1,23 @@
 # houston-p100-cluster
 
-Documentation for `houston`, a 3x NVIDIA Tesla P100 16GB local
+Documentation for `houston`, an NVIDIA Tesla P100 16GB local
 LLM inference server. It's a repurposed old NAS build, given a second life
 as a dedicated inference box once the hardware had 48GB of usable VRAM
-crammed into it.
+crammed into it. It was built with three P100s; a fourth was added on
+2026-10-06, for 64GB.
 
-## Production today (2026-10-05)
+## Production today (2026-10-06)
 
 Models are served from **Docker**, not from a bare-metal `llama-server` systemd service
 (that unit is masked). One Docker Compose service runs
 [Kmic-68's P100 fork](https://github.com/Kmic-68/llama.cpp) of llama.cpp, built with
-NCCL, across all three cards with tensor split.
+NCCL, across all four cards with tensor split.
 
 | | |
 |---|---|
 | Model | Qwen3.8-27B, unsloth `UD-Q6_K_XL` (23.5 GiB) |
 | Build | Kmic-68 fork at `ae35056eb`, CUDA 12.9.1, NCCL 2.27.3, in a Docker image |
-| Split | `-sm tensor -ts 1/1/1`, all layers on GPU, q4_0 KV cache |
+| Split | `-sm tensor -ts 1/1/1/1` (four cards), all layers on GPU, q4_0 KV cache |
 | Context | `-c 262144`, one slot |
 | Batch | `-b 2048 -ub 2048` |
 | Loading | `-lm none -fit off` |
@@ -28,15 +29,19 @@ Speed on that configuration:
 
 | Measurement | Result |
 |---|---|
-| Prompt processing, 64,000-token prompt through the server | 405 tokens/s |
-| Generation with MTP, single requests through the server | 37-50 tokens/s |
-| Prompt processing, `llama-bench` pp2048 at 150 W | 530 tokens/s |
-| Generation without MTP, `llama-bench` tg512 at 150 W | 33.3 tokens/s |
-| Agent battery (9 tasks, measured at 125 W and `-b 32768`) | 124 s mean task time; 378 tokens/s prompt processing and 48.9 tokens/s generation over the run |
-| Peak memory | 11.1 GB of 16 GB per card |
+| Prompt processing, 64,000-token prompt through the server | 514 tokens/s (389 on three cards) |
+| Generation with MTP, 512 tokens through the server | 42.1 tokens/s (37.4 on three cards) |
+| Prompt processing, `llama-bench` pp2048 | 629 tokens/s (505 on three cards) |
+| Generation without MTP, `llama-bench` tg512 | 39.2 tokens/s (33.1 on three cards) |
+| Agent battery (9 tasks x 3, on this exact configuration) | 26 of 27 passed; 120 s mean task time; 454 tokens/s prompt processing and 53.9 tokens/s generation over the run |
+| Peak memory | 8.5 GB of 16 GB per card |
+
+All of these were measured on 2026-10-06 at the 150 W limit; the three-card figures in
+brackets are from the same session. Details are in
+[3gpu-optimization/FOUR-CARDS.md](3gpu-optimization/FOUR-CARDS.md).
 
 The full command and the measured reason for each setting are in
-[SOFTWARE.md](SOFTWARE.md#what-production-runs-now-2026-10-05). How these settings were
+[SOFTWARE.md](SOFTWARE.md#what-production-runs-now-2026-10-06). How these settings were
 arrived at is in [3gpu-optimization/](3gpu-optimization/).
 
 Most of the other documents here were written before this change. Where they say
