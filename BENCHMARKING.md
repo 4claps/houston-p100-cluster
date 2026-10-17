@@ -4,7 +4,7 @@
 > writing: Qwen3.6-35B-A3B on the patched llama.cpp build described in
 > [LLAMA-CPP-P100-ENHANCEMENTS.md](LLAMA-CPP-P100-ENHANCEMENTS.md), run directly on the host. Production
 > now runs in Docker on the Kmic-68 fork with a different model and settings; see "Production today" in
-> [README.md](README.md). The results below are left as measured.
+> [README.md](README.md), and it has four cards instead of three. The results below are left as measured.
 
 Benchmark results for this box, kept separate from
 [LLAMA-CPP-P100-ENHANCEMENTS.md](LLAMA-CPP-P100-ENHANCEMENTS.md) (which

@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Known issues and workarounds for running llama.cpp on the Houston 3x Tesla P100 rig.
+Known issues and workarounds for running llama.cpp on the Houston Tesla P100 rig (three cards until 2026-10-06, four since).
 
 ## `-sm tensor` crashes on second request (GGML_ASSERT(bcj.nodes[i]))
 

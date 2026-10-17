@@ -4,7 +4,7 @@
 > the Kmic-68 fork; see "Production today" in [README.md](README.md). This document is kept as the record
 > of the host build and its patches.
 
-This covers getting llama.cpp actually running well on these three P100s:
+This covers getting llama.cpp actually running well on these P100s (three at the time, four now):
 the CUDA toolchain problems that stood in the way of a working build, the
 Pascal-specific performance patches applied on top, and the tests run to
 confirm each step actually worked rather than just compiled.

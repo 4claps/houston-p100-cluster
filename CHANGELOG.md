@@ -3,6 +3,37 @@
 Notable changes to the benchmark results and docs in this repo, newest
 first. Dates are when the change merged.
 
+## 2026-10-17
+
+- **Added** the three later four-card tests to
+  [3gpu-optimization/FOUR-CARDS.md](3gpu-optimization/FOUR-CARDS.md): Q8_0 against `UD-Q6_K_XL`
+  (2026-10-11), KV cache type and MTP settings (2026-10-11) and f16 KV at the serving context
+  (2026-10-12). Nothing beat production: the Q8_0 file scored the same 26 of 27 on the agent battery
+  and generated 4.6% slower; the q8_0 cache was the slowest option; f16 gained about 3% on short
+  requests but lost 2.5% on a 64,000-token prompt and cost 2.9 GB per card; MTP `n-max` 2 and 5 were
+  slower than 3. Production was not changed.
+- **Updated** the pages that still described three cards: "Production today" and the contents list in
+  [README.md](README.md), the power-limit and fan sections of [SOFTWARE.md](SOFTWARE.md), the PCIe,
+  power and case sections of [HARDWARE.md](HARDWARE.md), and short notes in
+  [BIOS-FIX.md](BIOS-FIX.md), [TROUBLESHOOTING.md](TROUBLESHOOTING.md),
+  [LLAMA-CPP-P100-ENHANCEMENTS.md](LLAMA-CPP-P100-ENHANCEMENTS.md) and the three benchmark pages.
+  Their measured numbers are unchanged.
+
+## 2026-10-06
+
+- **Added** a fourth Tesla P100 and moved production to four cards (`-ts 1/1/1/1`). Measured
+  on the production configuration against three cards the same day: a 64,000-token prompt
+  389 → 514 t/s (+32%), generation with MTP 37.4 → 42.1 t/s (+13%), 8.5 GB per card instead
+  of about 11. The agent battery on the four-card service passed 26 of 27 tasks at 120 s
+  mean task time. Full results in
+  [3gpu-optimization/FOUR-CARDS.md](3gpu-optimization/FOUR-CARDS.md).
+- **Updated** "Production today" in [README.md](README.md), "What production runs now" and
+  the fan-control note in [SOFTWARE.md](SOFTWARE.md), and the GPU entry in
+  [HARDWARE.md](HARDWARE.md) for four cards. The fans are back on the temperature-driven
+  service; `--metrics` is now on the server command.
+- **Changed** the production Compose service to `restart: unless-stopped`, so it starts
+  again after a reboot if it was running before. Noted in [SOFTWARE.md](SOFTWARE.md).
+
 ## 2026-10-05
 
 - **Changed** the GPU power limit from 125 W to 150 W per card
