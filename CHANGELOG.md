@@ -3,6 +3,22 @@
 Notable changes to the benchmark results and docs in this repo, newest
 first. Dates are when the change merged.
 
+## 2026-10-17
+
+- **Added** the three later four-card tests to
+  [3gpu-optimization/FOUR-CARDS.md](3gpu-optimization/FOUR-CARDS.md): Q8_0 against `UD-Q6_K_XL`
+  (2026-10-11), KV cache type and MTP settings (2026-10-11) and f16 KV at the serving context
+  (2026-10-12). Nothing beat production: the Q8_0 file scored the same 26 of 27 on the agent battery
+  and generated 4.6% slower; the q8_0 cache was the slowest option; f16 gained about 3% on short
+  requests but lost 2.5% on a 64,000-token prompt and cost 2.9 GB per card; MTP `n-max` 2 and 5 were
+  slower than 3. Production was not changed.
+- **Updated** the pages that still described three cards: "Production today" and the contents list in
+  [README.md](README.md), the power-limit and fan sections of [SOFTWARE.md](SOFTWARE.md), the PCIe,
+  power and case sections of [HARDWARE.md](HARDWARE.md), and short notes in
+  [BIOS-FIX.md](BIOS-FIX.md), [TROUBLESHOOTING.md](TROUBLESHOOTING.md),
+  [LLAMA-CPP-P100-ENHANCEMENTS.md](LLAMA-CPP-P100-ENHANCEMENTS.md) and the three benchmark pages.
+  Their measured numbers are unchanged.
+
 ## 2026-10-06
 
 - **Added** a fourth Tesla P100 and moved production to four cards (`-ts 1/1/1/1`). Measured

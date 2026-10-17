@@ -4,7 +4,7 @@ Documentation for `houston`, an NVIDIA Tesla P100 16GB local
 LLM inference server. It's a repurposed old NAS build, given a second life
 as a dedicated inference box once the hardware had 48GB of usable VRAM
 crammed into it. It was built with three P100s; a fourth was added on
-2026-10-06, for 64GB.
+2026-10-06, for 64GB. It runs four cards today.
 
 ## Production today (2026-10-06)
 
@@ -44,6 +44,21 @@ The full command and the measured reason for each setting are in
 [SOFTWARE.md](SOFTWARE.md#what-production-runs-now-2026-10-06). How these settings were
 arrived at is in [3gpu-optimization/](3gpu-optimization/).
 
+**Since 2026-10-06 these settings have been tested against alternatives on four cards, and none won**
+(2026-10-11 and 10-12, measurement only, production unchanged):
+
+| Alternative | Result against production |
+|---|---|
+| Q8_0 model file instead of `UD-Q6_K_XL` | Same agent battery score (26 of 27 both); 4.6% slower generation; 0.8 GB more per card |
+| q8_0 context cache instead of q4_0 | 8.7% slower generation in `llama-bench`; the slowest option |
+| f16 context cache instead of q4_0 | About 3% faster on short requests, 2.5% slower on a 64,000-token prompt, 2.9 GB more per card |
+| MTP `n-max` 2 or 5 (production is 3) | 7% and 10% slower on short requests; draft cut-off settings within noise |
+
+MTP itself gives +15% generation on short requests and costs 4.5% of prompt speed. The q4_0 cache
+changes the output very little (same top token 98.0% of the time as f16, no drift out to 65,536
+tokens). Tables and caveats are in
+[3gpu-optimization/FOUR-CARDS.md](3gpu-optimization/FOUR-CARDS.md#later-tests-on-four-cards-2026-10-11-and-10-12).
+
 Most of the other documents here were written before this change. Where they say
 "production" they mean the earlier setup: Qwen3.6-35B-A3B on a patched llama.cpp build
 running directly on the host, with layer split and a 125 W limit. Each carries a dated
@@ -67,9 +82,9 @@ are written down somewhere durable.
   llama.cpp for Pascal and the P100 performance patches
 - [BENCHMARKING.md](BENCHMARKING.md) — baseline-vs-patched throughput
   results, MTP speculative-decoding tuning, GPU utilization/power
-  findings, and the current 125 W-cap agent-battery baseline
+  findings, and the earlier 125 W-cap agent-battery baseline (three cards, previous model)
 - [GPU-SCALING.md](GPU-SCALING.md) — how performance scales as the
-  P100s are removed one at a time (3 → 2 → 1 cards), measured with a
+  P100s are removed one at a time (3 → 2 → 1 cards; measured before the fourth card was added), measured with a
   real agent workload rather than a synthetic benchmark, plus PCIe lane-
   width tests and power draw. Headline results: for single-stream use,
   one, two and three cards all generate at roughly the same speed (about
@@ -82,9 +97,11 @@ are written down somewhere durable.
 - [KMIC68-FORK-AGENT-BATTERY.md](KMIC68-FORK-AGENT-BATTERY.md) — an
   independent P100/Pascal fork ([Kmic-68/llama.cpp](https://github.com/Kmic-68/llama.cpp))
   evaluated in an isolated Docker environment, gated for correctness, then run
-  against the real Hermes agent battery at a 125 W power cap
+  against the real Hermes agent battery at a 125 W power cap (the first evaluation, on three
+  cards; production now runs this fork)
 - [3gpu-optimization/](3gpu-optimization/) — the 3-GPU optimization work on the Kmic-68
-  fork, all in one folder: a summary ([README](3gpu-optimization/README.md)), every result
+  fork, all in one folder, plus [FOUR-CARDS.md](3gpu-optimization/FOUR-CARDS.md) for the
+  fourth card and the later Q8_0, KV cache and MTP tests: a summary ([README](3gpu-optimization/README.md)), every result
   ([RESULTS](3gpu-optimization/RESULTS.md)), the method, the limitations, the plan
   ([PLAN](3gpu-optimization/PLAN.md)), derived data and scripts. The same measurements were
   submitted to the fork as [PR #2](https://github.com/Kmic-68/llama.cpp/pull/2). They cover CUDA graphs, model loading, NCCL,
@@ -100,7 +117,6 @@ are written down somewhere durable.
 
 Benchmarking on this box is an ongoing project, and more will follow.
 The GPU scaling and miscellaneous benchmarks are living documents that
-will keep growing as further tests are run. Note that the "3x P100"
-description above is the build as originally assembled; the GPU-scaling
-results in `GPU-SCALING.md` are about what changes when cards are
-removed.
+will keep growing as further tests are run. The GPU-scaling and miscellaneous
+results were measured on the three-card machine, with the earlier model and build;
+the four-card results are in `3gpu-optimization/FOUR-CARDS.md`.

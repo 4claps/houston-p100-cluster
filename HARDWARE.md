@@ -25,7 +25,7 @@
 On this board the PCIe link widths depend on which slots are populated,
 and the choice has a side effect on the USB ports:
 
-- **Three cards** originally came up as **x16/x8/x8**: one P100 at its native
+- **Three cards** (the build before 2026-10-06) originally came up as **x16/x8/x8**: one P100 at its native
   x16, the other two at x8. Since the riser was removed on 2026-09-29 (see
   [TROUBLESHOOTING.md](TROUBLESHOOTING.md#gpu-falls-off-the-bus-xid-79-and-xid-154)),
   all three cards sit at `01:00.0`, `03:00.0` and `05:00.0`, each running
@@ -33,6 +33,9 @@ and the choice has a side effect on the USB ports:
   UUID) as the source of truth rather than PCI addresses. The benchmark docs
   describe the earlier layout; see the note in
   [BENCHMARKING.md](BENCHMARKING.md).
+- **Four cards** (since 2026-10-06) all run at PCIe Gen 3 x8, all pairs `PHB` in
+  `nvidia-smi topo -m`, with P2P working on every pair. See
+  [BIOS-FIX.md](BIOS-FIX.md#adding-pcie-bifurcation-support) for the x8x8 bifurcation of the top slot.
 - **Two cards in the dedicated x16 slots** come up as **x16/x16**.
 - **x16/x16 uses up all of the board's PCIe lanes, which disables the
   USB 3 ports.** USB 2 ports keep working.
@@ -50,16 +53,16 @@ port.**
 Seeing what a headless configuration is doing needs a display card,
 since the P100s have no video output. A GT 610 was used for this while
 diagnosing the two-card configuration; it can't be fitted alongside
-three P100s, which occupy every slot it could use (it has since been
+the P100s, which occupy every slot it could use (it has since been
 removed; it was only ever used to test slot link width, and the 580 driver
 ignored it). The PCIe x1 card
 described under [Display](#display) below is what was used for that
-purpose with all three installed.
+purpose with the P100s installed.
 
 ## Power
 
 - **Corsair RM1000x 1000W 80+ Gold**, fully modular (refurbished unit).
-- **3x PCIe-8-pin-to-EPS adapter cables.** Each P100 draws its power
+- **PCIe-8-pin-to-EPS adapter cables, one per card.** Each P100 draws its power
   through an 8-pin EPS connector, not the PCIe 8-pin connector its
   physical socket resembles. A single PCIe 8-pin lead is only rated for
   150W continuous — well short of the P100's 250W board power — so each
@@ -79,7 +82,7 @@ purpose with all three installed.
 ## Case
 
 - **NZXT Source 530 (CA-SO530-M1)**, full tower. Needed for the physical
-  length of three double-wide, full-length datacenter cards plus airflow
+  length of several double-wide, full-length datacenter cards plus airflow
   clearance.
 
 ## Cooling
@@ -103,8 +106,7 @@ Cooling is retrofitted with:
 ## Display
 
 None of the P100s have a video output — they're compute-only Tesla cards
-— and all three of the board's double-wide slots are occupied by the
-GPUs. A spare/old PCIe x1 card was used for display output during initial
+— and the P100s occupy the board's double-wide slots. A spare/old PCIe x1 card was used for display output during initial
 setup and BIOS work. (Note: as of this writing, no display adapter shows
 up in `lspci` — the box now runs fully headless over SSH, so it's possible
 this card was pulled out again once console access was no longer needed.

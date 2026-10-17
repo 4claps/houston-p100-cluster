@@ -1,5 +1,8 @@
 # The Above 4G Decoding fix
 
+> **Note (2026-10-17):** this page was written for the three-card build. The same fix covers the fourth
+> card added on 2026-10-06 (64GB of BAR space instead of 48GB); the machine runs four cards today.
+
 This is the story of the single most time-consuming part of this build:
 getting the motherboard to correctly map three 16GB GPUs into address
 space it was never designed to hand out.

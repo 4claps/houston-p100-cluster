@@ -16,11 +16,11 @@ xorg-x11-drv-nvidia-580xx-cuda
 This isn't the default choice — Fedora 44's regular `akmod-nvidia`
 package pulls driver 590 and later, and that branch **dropped Pascal
 architecture support entirely**. Without the `580xx`-suffixed packages,
-these three P100s simply wouldn't be recognized by the driver at all.
+these P100s simply wouldn't be recognized by the driver at all.
 Anyone reinstalling or updating this box needs to keep pulling from the
 `580xx` branch specifically, not just "whatever RPM Fusion's nvidia
 package currently is" — a routine `dnf upgrade` that lets the driver
-float to the newest branch would silently break all three GPUs.
+float to the newest branch would silently break all the GPUs.
 
 Currently installed: driver `580.178.04`, which also brought CUDA 13.0
 API support. Note that CUDA 13's own compiler toolchain (`nvcc`) has
@@ -59,7 +59,7 @@ while true; do
 done
 ```
 
-It polls `nvidia-smi` for the hottest of the three GPUs every 5 seconds
+It polls `nvidia-smi` for the hottest GPU every 5 seconds
 and linearly ramps the shroud fans between a 70/255 idle floor and full
 speed across a 40-75°C window.
 
@@ -88,13 +88,13 @@ temperature-driven service at 150 W on four cards have not been measured.
 
 ## GPU power limit
 
-All three P100s are power limited to **150 W** (the P100's minimum is 125 W; the
-default is 250 W). The limit was 125 W until 2026-10-05; that is the cap the
+All four P100s are power limited to **150 W** (the P100's minimum is 125 W; the
+default is 250 W). The limit was 125 W until 2026-10-05, on the three-card machine; that is the cap the
 agent-battery baseline in
 [BENCHMARKING.md](BENCHMARKING.md#current-baseline-agent-battery-with-a-125-w-power-cap)
 was measured under. It used to be applied by hand and was lost on every reboot; since
 2026-09-29 it is applied at boot by a systemd unit, and `nvidia-persistenced.service` is
-enabled so NVIDIA persistence mode is on for all three cards.
+enabled so NVIDIA persistence mode is on for all four cards.
 
 Why 150 W: a sweep on the current production stack (Qwen3.8-27B on the Kmic-68 fork,
 tensor split, NCCL) found the 125 W cap was limiting throughput, with the driver's
@@ -108,7 +108,8 @@ power-cap reason active in up to 80% of busy samples during generation.
 
 150 W takes most of the generation gain; 175 W adds almost nothing to generation for
 another 54 W. Generation per GPU watt is 12% lower at 150 W than at 125 W. Peak draw of
-the three cards plus the CPU package was about 500 W at 150 W. Instantaneous per-card
+the three cards plus the CPU package was about 500 W at 150 W; with four cards it was
+about 710 W (see "What production runs now"). Instantaneous per-card
 peaks at the 150 W cap reached 169-177 W in later use; the cap is an average, not a
 hard ceiling. Full method and data: section 1.11 of the
 [3-GPU measurements](3gpu-optimization/RESULTS.md).
@@ -139,7 +140,7 @@ sudo systemctl enable --now nvidia-persistenced.service nvidia-power-limit.servi
 ```
 
 Check it with `nvidia-smi --query-gpu=index,persistence_mode,power.limit --format=csv`;
-all three should show `Enabled` and `150.00 W`.
+all four should show `Enabled` and `150.00 W`.
 
 **If a card of a different model is added,** a single blanket `-pl 150` may be wrong for
 it. Run `nvidia-smi -L` first to confirm the GPU indexes (they can shift when a card is
@@ -221,6 +222,10 @@ Two things to know when operating it:
   it again at boot if it was running when the machine went down. If it was stopped by hand
   (`docker compose stop`), it stays stopped. Set on 2026-10-06 after a reboot left production
   down; the auto-start itself has not been tested with a reboot.
+
+The alternatives tested on four cards on 2026-10-11 and 10-12 (Q8_0 file, q8_0 or f16 context
+cache, other MTP settings) were each slower or within noise, so these settings stand; see
+[FOUR-CARDS.md](3gpu-optimization/FOUR-CARDS.md#later-tests-on-four-cards-2026-10-11-and-10-12).
 
 On these settings a 64,000-token prompt processes at about 514 t/s and replies generate at
 42-56 t/s with MTP. Peak draw of the four cards was about 650 W, roughly 710 W with the CPU,
