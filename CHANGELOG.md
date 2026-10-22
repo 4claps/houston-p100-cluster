@@ -3,6 +3,16 @@
 Notable changes to the benchmark results and docs in this repo, newest
 first. Dates are when the change merged.
 
+## 2026-10-22
+
+- **Added** [3gpu-optimization/QWEN36-2X2.md](3gpu-optimization/QWEN36-2X2.md): Qwen3.6-35B-A3B and a 2+2 split of
+  the four cards (Qwen3.6 `Q4_K_XL` on two, Qwen3.8 `UD-Q6_K_XL` on the other two, both at 262,144 context).
+  Qwen3.6 on two cards ran 90.9 tokens/s on short chats against 37.7 for Qwen3.8 on two; running both at once cost
+  each at most 5%. With Qwen3.8 as the main agent, subagents on Qwen3.6 finished agent tasks 14-23% sooner than on
+  Qwen3.8 (12 of 12 against 11 of 12 passed). Qwen3.8 on two cards scored 24 of 27 on the standard agent battery
+  (26 of 27 on four). MTP and batch tuning found nothing better than the starting settings. Production was not
+  changed. Added to the contents list in [README.md](README.md).
+
 ## 2026-10-17
 
 - **Added** the three later four-card tests to

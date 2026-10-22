@@ -108,6 +108,10 @@ are written down somewhere durable.
   the power cap, context fit, long-context output quality, MTP settings, an agent battery,
   concurrent clients and what happens when a client drops mid-prompt; the production
   settings in `SOFTWARE.md` come from them
+- [3gpu-optimization/QWEN36-2X2.md](3gpu-optimization/QWEN36-2X2.md) — running two models side by side
+  (2026-10-21 and 10-22): Qwen3.6-35B-A3B on two cards next to Qwen3.8 on the other two, which Qwen3.6 file to
+  use, how much each slows the other, agent batteries with Qwen3.8 delegating subagents to Qwen3.6, and tuning of
+  both. Measurement only; production unchanged
 
 - [TROUBLESHOOTING.md](TROUBLESHOOTING.md) — known issues and workarounds,
   including the `-sm tensor` crash and a GPU falling off the bus (Xid 79)
